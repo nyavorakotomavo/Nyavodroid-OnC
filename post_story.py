@@ -2,8 +2,7 @@
 """
 Nyavo Channel — publication STORY (image courte, texte minimal).
 ⚠️ LIMITE API : l'API Graph ne permet PAS d'ajouter des stickers
-interactifs (sondage, question, quiz) par automatisation. Ce script
-publie une image avec le texte écrit directement dessus.
+interactifs (sondage, question, quiz) par automatisation.
 
 Projet Gemini : nyavo-story (clé dédiée GEMINI_API_KEY_STORY)
 Secrets requis : FB_PAGE_ID, FB_PAGE_ACCESS_TOKEN, GEMINI_API_KEY_STORY
@@ -43,16 +42,15 @@ GRAPH_API_VERSION = "v25.0"
 STORY_IMAGE_PATH = "story_image.png"
 STORY_WIDTH, STORY_HEIGHT = 1080, 1920
 
+# ✅ Texte : API generateContent (inchangé)
 GEMINI_TEXT_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
     "models/gemini-2.5-flash:generateContent"
 )
-# ✅ Modèle image corrigé : gemini-3.1-flash-image-preview
-#    (supporte generationConfig.imageConfig.aspectRatio)
-GEMINI_IMAGE_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-3.1-flash-image-preview:generateContent"
-)
+
+# ✅ Image : NOUVELLE API Interactions (remplace generateContent)
+GEMINI_IMAGE_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
+GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image"
 
 MAX_RETRIES = 4
 RETRY_DELAY = 15
@@ -137,6 +135,44 @@ def _erreur_facebook(e: requests.exceptions.HTTPError, contexte: str) -> Runtime
     return RuntimeError(f"Facebook Graph ({contexte}, HTTP {code}) : {corps}")
 
 
+def _extraire_image_base64(resultat: dict) -> str:
+    """
+    Extrait les données image base64 d'une réponse API Interactions.
+    Cherche dans output_image, output[], et candidates[] pour compatibilité.
+    """
+    # Format API Interactions : output_image
+    if "output_image" in resultat:
+        oi = resultat["output_image"]
+        if isinstance(oi, dict) and "data" in oi:
+            return oi["data"]
+        if isinstance(oi, str):
+            return oi
+
+    # Format API Interactions : output[]
+    if "output" in resultat:
+        for item in resultat["output"]:
+            if isinstance(item, dict):
+                if item.get("type") == "image" and "data" in item:
+                    return item["data"]
+                if "inlineData" in item:
+                    return item["inlineData"]["data"]
+                if "inline_data" in item:
+                    return item["inline_data"]["data"]
+
+    # Format legacy generateContent : candidates[]
+    if "candidates" in resultat:
+        for part in resultat["candidates"][0]["content"]["parts"]:
+            if "inlineData" in part:
+                return part["inlineData"]["data"]
+            if "inline_data" in part:
+                return part["inline_data"]["data"]
+
+    raise ValueError(
+        f"Impossible d'extraire l'image de la réponse. "
+        f"Clés disponibles : {list(resultat.keys())}"
+    )
+
+
 # ──────────────────────────────────────────────
 # Génération du texte (Gemini — Projet A)
 # ──────────────────────────────────────────────
@@ -204,9 +240,10 @@ def generer_texte_story() -> tuple[str, str, str]:
 
 # ──────────────────────────────────────────────
 # Génération de l'image (Gemini — Projet A)
+# ✅ NOUVELLE API Interactions
 # ──────────────────────────────────────────────
 def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
-    """Génère une image verticale 9:16 liée au texte via Gemini."""
+    """Génère une image verticale 9:16 liée au texte via Gemini Interactions API."""
     prompt = (
         f"Illustration verticale 9:16 pour ce texte : « {texte} »\n"
         f"Axe : {PILLARS[pilier]['label']}\n"
@@ -215,32 +252,28 @@ def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
     )
 
     try:
-        print("  🖼️  Image via Gemini [story]...")
+        print("  🖼️  Image via Gemini Interactions API [story]...")
         reponse = _requete_avec_retry(
             "POST",
-            f"{GEMINI_IMAGE_URL}?key={GEMINI_API_KEY}",
-            headers={"Content-Type": "application/json"},
+            GEMINI_IMAGE_URL,
+            headers={
+                "x-goog-api-key": GEMINI_API_KEY,
+                "Content-Type": "application/json",
+            },
             json_data={
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "responseModalities": ["IMAGE"],
-                    "imageConfig": {"aspectRatio": "9:16"},
+                "model": GEMINI_IMAGE_MODEL,
+                "input": [{"type": "text", "text": prompt}],
+                "response_format": {
+                    "type": "image",
+                    "aspect_ratio": "9:16",
+                    "image_size": "1K",
                 },
             },
             timeout=120,
         )
 
         resultat = reponse.json()
-
-        # Extraire l'image base64 de la réponse
-        image_b64 = None
-        for part in resultat["candidates"][0]["content"]["parts"]:
-            if "inlineData" in part:
-                image_b64 = part["inlineData"]["data"]
-                break
-
-        if not image_b64:
-            raise ValueError("Pas de données image dans la réponse Gemini.")
+        image_b64 = _extraire_image_base64(resultat)
 
         with open(chemin, "wb") as f:
             f.write(base64.b64decode(image_b64))
@@ -259,7 +292,7 @@ def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"Gemini image [story] injoignable : {e}") from e
 
-    except (KeyError, IndexError) as e:
+    except (KeyError, IndexError, ValueError) as e:
         raise RuntimeError(f"Réponse Gemini image [story] invalide : {e}") from e
 
 
