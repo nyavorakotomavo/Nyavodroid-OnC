@@ -1,21 +1,16 @@
-name: Auto-post Nyavo Channel — Feed
+name: Auto-post Nyavo Channel — Reels
 
 on:
   schedule:
-    # Créneau 1 — pause déjeuner (10h00 UTC = 13h Madagascar / 12h France)
-    # Lundi à vendredi
-    - cron: "0 10 * * 1-5"
-    # Créneau 3 — soirée (17h30 UTC = 20h30 Madagascar / 19h30 France)
-    # Uniquement mardi/mercredi/jeudi (2e post, jours à plus fort engagement)
-    - cron: "30 17 * * 2-4"
+    - cron: "0 7 * * 1-6"
+    - cron: "30 9 * * 1-6"
+    - cron: "0 17 * * 0,1-6"
   workflow_dispatch: {}
 
-permissions:
-  contents: write
-
 jobs:
-  post:
+  reel:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout du repo
         uses: actions/checkout@v4
@@ -25,19 +20,18 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Installer les dépendances
-        run: pip install requests
+      - name: Installer les dépendances système
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
 
-      - name: Publier le post
+      - name: Installer les dépendances Python
+        run: pip install "requests>=2.31.0"
+
+      - name: Publier le Reel
         env:
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
-        run: python post_to_facebook.py
-
-      - name: Sauvegarder l'historique anti-répétition
-        run: |
-          git config user.name "nyavo-bot"
-          git config user.email "bot@nyavochannel.local"
-          git add history.json
-          git diff --staged --quiet || git commit -m "chore: update content history [skip ci]"
-          git push
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        run: python post_story.py
