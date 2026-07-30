@@ -1,25 +1,22 @@
 #!/usr/bin/env python3
 """
-Nyavo Channel — publication multi-formats (Reel, Image+Texte, Texte seul).
-La Story est gérée par un fichier séparé (post_story.py).
+Nyavo Channel — publication multi-formats.
+  - 📝 Texte seul     (POST /feed)
+  - 🖼️  Image + Texte  (POST /photos)
+  - 🎬 Reel vidéo     (POST /video_reels — upload 3 phases)
 
-Rotation intelligente selon le créneau horaire :
-  - Matin  (07h00 UTC) → Texte seul
-  - Midi   (09h30 UTC) → Image + Texte
-  - Soir   (17h00 UTC) → Reel vidéo
+La Story est gérée séparément par post_story.py.
 
-Fallback texte : Mistral → Gemini
+Rotation selon l'heure UTC :
+  07h → texte_seul | 09h → image_texte | 17h → reel
+  workflow_dispatch → aléatoire pondéré
+
+Texte : Mistral → fallback Gemini
 Images : Gemini
-Vidéo : ffmpeg
+Vidéo : ffmpeg (assemblage local)
 
-Secrets requis :
-  - FB_PAGE_ID
-  - FB_PAGE_ACCESS_TOKEN
-  - GEMINI_API_KEY
-  - MISTRAL_API_KEY (optionnel — fallback Gemini si absent)
-
-Dépendances Python : requests>=2.31.0
-Dépendances système : ffmpeg, fonts-dejavu-core
+Secrets : FB_PAGE_ID, FB_PAGE_ACCESS_TOKEN, GEMINI_API_KEY, MISTRAL_API_KEY (opt.)
+Dépendances : requests>=2.31.0 | ffmpeg + fonts-dejavu-core
 """
 
 import base64
@@ -52,14 +49,12 @@ MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
 # Constantes
 # ──────────────────────────────────────────────
 GRAPH_API_VERSION = "v25.0"
-REEL_WIDTH, REEL_HEIGHT = 1080, 1920
-NB_IMAGES_REEL = 5
-DUREE_PAR_IMAGE = 2.5  # secondes
-AUDIO_PATH = "background_music.mp3"
 IMAGE_PATH = "post_image.png"
 REEL_VIDEO_PATH = "reel_video.mp4"
+NB_IMAGES_REEL = 5
+DUREE_PAR_IMAGE = 2.5
+AUDIO_PATH = "background_music.mp3"
 
-# Endpoints API
 MISTRAL_TEXT_URL = "https://api.mistral.ai/v1/chat/completions"
 GEMINI_TEXT_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
@@ -70,10 +65,11 @@ GEMINI_IMAGE_URL = (
     "models/gemini-2.5-flash-image:generateContent"
 )
 
-# Retries
-MAX_RETRIES = 3
-RETRY_DELAY = 5
+# Retries (augmenté pour les images Gemini)
+MAX_RETRIES = 5
+RETRY_DELAY = 20
 TIMEOUT = 60
+DELAY_ENTRE_IMAGES = 15  # pause anti-429 entre chaque image
 
 
 # ══════════════════════════════════════════════
@@ -84,12 +80,10 @@ def _requete_avec_retry(
     url: str,
     *,
     headers: dict | None = None,
-    params: dict | None = None,
     json_data: dict | None = None,
     data: dict | None = None,
     files: dict | None = None,
     timeout: int = TIMEOUT,
-    stream: bool = False,
 ) -> requests.Response:
     """Requête HTTP avec retries sur 429 / 5xx / timeout / connexion."""
     derniere_erreur: Exception | None = None
@@ -100,17 +94,18 @@ def _requete_avec_retry(
                 method=methode,
                 url=url,
                 headers=headers,
-                params=params,
                 json=json_data,
                 data=data,
                 files=files,
                 timeout=timeout,
-                stream=stream,
             )
+
             if reponse.status_code == 429 or reponse.status_code >= 500:
                 attente = RETRY_DELAY * tentative
-                print(f"  ⚠️  HTTP {reponse.status_code} — retry dans {attente}s "
-                      f"({tentative}/{MAX_RETRIES})")
+                print(
+                    f"  ⚠️  HTTP {reponse.status_code} — retry dans {attente}s "
+                    f"({tentative}/{MAX_RETRIES})"
+                )
                 derniere_erreur = requests.exceptions.HTTPError(
                     f"HTTP {reponse.status_code}", response=reponse
                 )
@@ -122,13 +117,15 @@ def _requete_avec_retry(
 
         except requests.exceptions.Timeout as e:
             derniere_erreur = e
-            print(f"  ⚠️  Timeout — retry dans {RETRY_DELAY * tentative}s")
-            time.sleep(RETRY_DELAY * tentative)
+            attente = RETRY_DELAY * tentative
+            print(f"  ⚠️  Timeout — retry dans {attente}s ({tentative}/{MAX_RETRIES})")
+            time.sleep(attente)
 
         except requests.exceptions.ConnectionError as e:
             derniere_erreur = e
-            print(f"  ⚠️  Connexion — retry dans {RETRY_DELAY * tentative}s")
-            time.sleep(RETRY_DELAY * tentative)
+            attente = RETRY_DELAY * tentative
+            print(f"  ⚠️  Connexion — retry dans {attente}s ({tentative}/{MAX_RETRIES})")
+            time.sleep(attente)
 
         except requests.exceptions.HTTPError:
             raise
@@ -143,8 +140,11 @@ def _erreur_facebook(e: requests.exceptions.HTTPError, contexte: str) -> Runtime
         code = e.response.status_code
         try:
             err = e.response.json().get("error", {})
-            corps = (f"[{err.get('type', '?')}] {err.get('message', '?')} "
-                     f"(code {err.get('code', '?')})")
+            corps = (
+                f"[{err.get('type', '?')}] "
+                f"{err.get('message', '?')} "
+                f"(code {err.get('code', '?')})"
+            )
         except Exception:
             corps = e.response.text[:400]
     return RuntimeError(f"Facebook Graph ({contexte}, HTTP {code}) : {corps}")
@@ -155,22 +155,19 @@ def _erreur_facebook(e: requests.exceptions.HTTPError, contexte: str) -> Runtime
 # ══════════════════════════════════════════════
 def choisir_type_contenu() -> str:
     """
-    Détermine le type de contenu selon l'heure UTC du créneau.
-      07h → texte_seul
-      09h → image_texte
-      17h → reel
-    En dehors des créneaux (workflow_dispatch) → aléatoire pondéré.
+    Détermine le format selon l'heure UTC.
+      07h → texte_seul | 09h → image_texte | 17h → reel
+      Sinon → aléatoire pondéré.
     """
-    heure_utc = datetime.now(timezone.utc).hour
+    heure = datetime.now(timezone.utc).hour
 
-    if 6 <= heure_utc < 8:
+    if 6 <= heure < 8:
         return "texte_seul"
-    elif 8 <= heure_utc < 12:
+    elif 8 <= heure < 12:
         return "image_texte"
-    elif 16 <= heure_utc < 20:
+    elif 16 <= heure < 20:
         return "reel"
     else:
-        # Déclenchement manuel → aléatoire pondéré
         return random.choices(
             ["reel", "image_texte", "texte_seul"],
             weights=[40, 35, 25],
@@ -224,10 +221,7 @@ def _texte_gemini(prompt: str) -> str:
 
 
 def generer_texte(prompt: str, contexte: str = "") -> str:
-    """
-    Génère du texte : Mistral d'abord, Gemini en fallback.
-    """
-    # Tentative Mistral
+    """Génère du texte : Mistral d'abord, Gemini en fallback."""
     if MISTRAL_API_KEY:
         try:
             print(f"  📝 Texte via Mistral {contexte}...")
@@ -235,7 +229,6 @@ def generer_texte(prompt: str, contexte: str = "") -> str:
         except Exception as e:
             print(f"  ⚠️  Mistral échec : {e}")
 
-    # Fallback Gemini
     try:
         print(f"  📝 Texte via Gemini {contexte}...")
         return _texte_gemini(prompt)
@@ -247,7 +240,7 @@ def generer_texte(prompt: str, contexte: str = "") -> str:
 #  GÉNÉRATION IMAGE (Gemini)
 # ══════════════════════════════════════════════
 def generer_image(prompt: str, chemin: str) -> None:
-    """Génère une image via Gemini et la sauvegarde en PNG."""
+    """Génère une image 9:16 via Gemini et sauvegarde en PNG."""
     reponse = _requete_avec_retry(
         "POST",
         f"{GEMINI_IMAGE_URL}?key={GEMINI_API_KEY}",
@@ -261,7 +254,10 @@ def generer_image(prompt: str, chemin: str) -> None:
         },
         timeout=120,
     )
-    image_b64 = reponse.json()["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]
+
+    resultat = reponse.json()
+    image_b64 = resultat["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]
+
     with open(chemin, "wb") as f:
         f.write(base64.b64decode(image_b64))
 
@@ -275,10 +271,7 @@ def generer_image(prompt: str, chemin: str) -> None:
 #  FORMAT 1 : TEXTE SEUL
 # ══════════════════════════════════════════════
 def publier_texte_seul(pilier: str) -> dict:
-    """
-    Publie un post texte simple sur la Page.
-    Endpoint : POST /{page-id}/feed
-    """
+    """Publie un post texte simple. POST /{page-id}/feed"""
     style = random.choice(STORY_PROMPTS)
     prompt = (
         f"Écris un post Facebook court et engageant (3-5 lignes) en français, "
@@ -288,8 +281,8 @@ def publier_texte_seul(pilier: str) -> dict:
         f"Pas de guillemets, pas de titre, juste le texte du post."
     )
 
-    texte = generer_texte(prompt, "(post texte seul)")
-    print(f"\n📌 Texte du post :\n{texte}\n")
+    texte = generer_texte(prompt, "(post texte)")
+    print(f"\n📌 Texte :\n{texte}\n")
 
     endpoint = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{FB_PAGE_ID}/feed"
 
@@ -297,10 +290,7 @@ def publier_texte_seul(pilier: str) -> dict:
         reponse = _requete_avec_retry(
             "POST",
             endpoint,
-            data={
-                "message": texte,
-                "access_token": FB_PAGE_ACCESS_TOKEN,
-            },
+            data={"message": texte, "access_token": FB_PAGE_ACCESS_TOKEN},
             timeout=TIMEOUT,
         )
         resultat = reponse.json()
@@ -317,29 +307,24 @@ def publier_texte_seul(pilier: str) -> dict:
 #  FORMAT 2 : IMAGE + TEXTE
 # ══════════════════════════════════════════════
 def publier_image_texte(pilier: str) -> dict:
-    """
-    Publie une photo avec légende sur la Page.
-    Endpoint : POST /{page-id}/photos
-    """
+    """Publie une photo avec légende. POST /{page-id}/photos"""
     label = PILLARS[pilier]["label"]
 
-    # 1. Générer la légende
+    # Légende
     prompt_legende = (
         f"Écris une légende Facebook courte et engageante (2-3 lignes) en français, "
-        f"catégorie '{label}'.\n"
-        f"Inclus 2-3 hashtags pertinents.\n"
-        f"Pas de guillemets, juste la légende."
+        f"catégorie '{label}'. Inclus 2-3 hashtags. Pas de guillemets."
     )
-    legende = generer_texte(prompt_legende, "(légende image)")
+    legende = generer_texte(prompt_legende, "(légende)")
 
-    # 2. Générer l'image
+    # Image
     prompt_image = f"{label}, {STYLE_IMAGE_SUFFIX}, vertical composition, high quality"
-    print(f"  🖼️  Génération de l'image...")
+    print("  🖼️  Génération image...")
     generer_image(prompt_image, IMAGE_PATH)
 
     print(f"\n📌 Légende :\n{legende}\n")
 
-    # 3. Publier photo + légende
+    # Publication
     endpoint = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{FB_PAGE_ID}/photos"
 
     try:
@@ -347,10 +332,7 @@ def publier_image_texte(pilier: str) -> dict:
             reponse = _requete_avec_retry(
                 "POST",
                 endpoint,
-                data={
-                    "caption": legende,
-                    "access_token": FB_PAGE_ACCESS_TOKEN,
-                },
+                data={"caption": legende, "access_token": FB_PAGE_ACCESS_TOKEN},
                 files={"source": (os.path.basename(IMAGE_PATH), f, "image/png")},
                 timeout=TIMEOUT,
             )
@@ -362,7 +344,6 @@ def publier_image_texte(pilier: str) -> dict:
 
     except requests.exceptions.HTTPError as e:
         raise _erreur_facebook(e, "photo + légende") from e
-
     except OSError as e:
         raise RuntimeError(f"Fichier image illisible : {e}") from e
 
@@ -399,7 +380,7 @@ def _generer_phrases_reel(pilier: str) -> list[str]:
 
 
 def _generer_images_reel(pilier: str, phrases: list[str]) -> list[str]:
-    """Génère les images séquentielles du Reel."""
+    """Génère les images séquentielles avec pause anti-429."""
     label = PILLARS[pilier]["label"]
     chemins = []
 
@@ -409,6 +390,13 @@ def _generer_images_reel(pilier: str, phrases: list[str]) -> list[str]:
             f"{label}, {STYLE_IMAGE_SUFFIX}, vertical composition, "
             f"scene {i}/{NB_IMAGES_REEL}, {phrase}"
         )
+
+        # Pause entre les images pour éviter le rate limit 429
+        if i > 1:
+            pause = DELAY_ENTRE_IMAGES + random.uniform(0, 5)
+            print(f"  ⏳ Pause anti-rate-limit : {pause:.0f}s...")
+            time.sleep(pause)
+
         print(f"  🖼️  Image Reel {i}/{NB_IMAGES_REEL}...")
         generer_image(prompt, chemin)
         chemins.append(chemin)
@@ -418,25 +406,22 @@ def _generer_images_reel(pilier: str, phrases: list[str]) -> list[str]:
 
 def _assembler_video(images: list[str], textes: list[str], sortie: str) -> None:
     """Assemble les images en vidéo avec texte animé via ffmpeg."""
-    # Vérifier l'audio
     audio_existe = os.path.exists(AUDIO_PATH)
     if not audio_existe:
         print(f"  ⚠️  '{AUDIO_PATH}' absent → vidéo sans son.")
 
-    # Construire les inputs
+    # Inputs
     inputs: list[str] = []
     for img in images:
         inputs += ["-loop", "1", "-t", str(DUREE_PAR_IMAGE), "-i", img]
-
     if audio_existe:
         inputs += ["-i", AUDIO_PATH]
 
-    # Filtre complexe
+    # Filtres
     n = len(images)
     concat = "".join(f"[{i}:v]" for i in range(n))
     filtres = [f"{concat}concat=n={n}:v=1:a=0[slideshow]"]
 
-    # Texte animé par segment
     txt_chain = "[slideshow]"
     for i, texte in enumerate(textes):
         t_esc = texte.replace("'", "\\'").replace(":", "\\:").replace("%", "%%")
@@ -479,33 +464,28 @@ def _assembler_video(images: list[str], textes: list[str], sortie: str) -> None:
         print(f"  ✅ Vidéo : {sortie} ({taille:,} octets)")
 
     except FileNotFoundError:
-        raise RuntimeError("ffmpeg absent. Installez : sudo apt-get install -y ffmpeg fonts-dejavu-core")
+        raise RuntimeError(
+            "ffmpeg absent. Installez : sudo apt-get install -y ffmpeg fonts-dejavu-core"
+        )
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ffmpeg échec (code {e.returncode}) :\n{e.stderr[:800]}") from e
 
 
 def publier_reel(pilier: str) -> dict:
-    """
-    Publie un Reel vidéo sur la Page.
-    Endpoint : POST /{page-id}/video_reels (upload en 3 phases)
-    """
-    # 1. Générer phrases + images
+    """Publie un Reel vidéo. POST /{page-id}/video_reels (3 phases)."""
     phrases = _generer_phrases_reel(pilier)
     print(f"\n📌 Phrases Reel :")
     for i, p in enumerate(phrases, 1):
         print(f"   {i}. {p}")
 
     images = _generer_images_reel(pilier, phrases)
-
-    # 2. Assembler la vidéo
     _assembler_video(images, phrases, REEL_VIDEO_PATH)
 
-    # 3. Upload en 3 phases
     endpoint = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{FB_PAGE_ID}/video_reels"
 
     try:
         # Phase 1 : start
-        print("  📤 Upload Reel — phase 1/3 (start)...")
+        print("  📤 Reel — phase 1/3 (start)...")
         r1 = _requete_avec_retry(
             "POST", endpoint,
             data={"upload_phase": "start", "access_token": FB_PAGE_ACCESS_TOKEN},
@@ -518,7 +498,7 @@ def publier_reel(pilier: str) -> dict:
             raise ValueError(f"Phase start échouée : {init}")
 
         # Phase 2 : transfer
-        print("  📤 Upload Reel — phase 2/3 (transfer)...")
+        print("  📤 Reel — phase 2/3 (transfer)...")
         with open(REEL_VIDEO_PATH, "rb") as f:
             _requete_avec_retry(
                 "POST", upload_url,
@@ -532,7 +512,7 @@ def publier_reel(pilier: str) -> dict:
             )
 
         # Phase 3 : finish
-        print("  📤 Upload Reel — phase 3/3 (finish)...")
+        print("  📤 Reel — phase 3/3 (finish)...")
         r3 = _requete_avec_retry(
             "POST", endpoint,
             data={
@@ -556,12 +536,10 @@ def publier_reel(pilier: str) -> dict:
 #  FONCTION PRINCIPALE
 # ══════════════════════════════════════════════
 def main() -> None:
-    """Choisit le format et publie le contenu."""
     print("=" * 60)
     print("🎬 Nyavo Channel — Publication multi-formats")
     print("=" * 60)
 
-    # 1. Choisir le type de contenu
     type_contenu = choisir_type_contenu()
     pilier = choisir_pilier()
 
@@ -570,31 +548,25 @@ def main() -> None:
         "image_texte": "🖼️  Image + Texte",
         "reel": "🎬 Reel vidéo",
     }
-    print(f"\n📌 Format  : {labels[type_contenu]}")
-    print(f"📌 Pilier  : {PILLARS[pilier]['label']}")
-    print(f"📌 Heure   : {datetime.now(timezone.utc).strftime('%H:%M UTC')}\n")
+    print(f"\n📌 Format : {labels[type_contenu]}")
+    print(f"📌 Pilier : {PILLARS[pilier]['label']}")
+    print(f"📌 Heure  : {datetime.now(timezone.utc).strftime('%H:%M UTC')}\n")
 
-    # 2. Publier selon le format
     if type_contenu == "texte_seul":
         resultat = publier_texte_seul(pilier)
-
     elif type_contenu == "image_texte":
         resultat = publier_image_texte(pilier)
-
     elif type_contenu == "reel":
         resultat = publier_reel(pilier)
-
     else:
         raise ValueError(f"Type inconnu : {type_contenu}")
 
-    # 3. Résumé
     print(f"\n{'=' * 60}")
     print(f"✅ TERMINÉ — {labels[type_contenu]}")
     print(f"   ID : {resultat.get('id', resultat.get('video_id', 'N/A'))}")
     print(f"{'=' * 60}")
 
 
-# ──────────────────────────────────────────────
 if __name__ == "__main__":
     try:
         main()
@@ -602,8 +574,7 @@ if __name__ == "__main__":
         print(f"\n❌ ERREUR : {e}", file=sys.stderr)
         sys.exit(1)
     except KeyError as e:
-        print(f"\n❌ Secret manquant : {e}. Vérifiez vos GitHub Secrets.",
-              file=sys.stderr)
+        print(f"\n❌ Secret manquant : {e}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         print(f"\n❌ Inattendu : {type(e).__name__}: {e}", file=sys.stderr)
