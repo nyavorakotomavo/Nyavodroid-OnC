@@ -13,6 +13,7 @@ on:
 jobs:
   story:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout du repo
         uses: actions/checkout@v4
@@ -22,11 +23,17 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Installer les dépendances
-        run: pip install requests
+      - name: Installer les dépendances système (ffmpeg + polices)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+
+      - name: Installer les dépendances Python
+        run: pip install "requests>=2.31.0"
 
       - name: Publier la story
         env:
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
         run: python post_story.py
