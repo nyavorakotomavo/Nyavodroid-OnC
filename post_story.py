@@ -26,12 +26,33 @@ from content_config import (
     TON_EDITORIAL,
 )
 
+
 # ──────────────────────────────────────────────
-# Variables d'environnement
+# Nettoyage des secrets et textes
 # ──────────────────────────────────────────────
-FB_PAGE_ID = os.environ["FB_PAGE_ID"]
-FB_PAGE_ACCESS_TOKEN = os.environ["FB_PAGE_ACCESS_TOKEN"]
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY_STORY"]
+def _nettoyer_secret(valeur: str) -> str:
+    """Supprime tout caractère non-ASCII d'un secret (clés API, tokens)."""
+    return valeur.encode("ascii", "ignore").decode("ascii").strip()
+
+
+def _nettoyer_texte(texte: str) -> str:
+    """Supprime caractères Unicode invisibles + Markdown."""
+    texte = re.sub(
+        r'[\u200e\u200f\u200b\u200c\u200d\ufeff\u00ad\u2060\u180e\u202a-\u202e\u2066-\u2069]',
+        '',
+        texte,
+    )
+    texte = texte.replace('**', '').replace('*', '')
+    texte = ''.join(c for c in texte if c.isprintable() or c in '\n\t')
+    return texte.strip()
+
+
+# ──────────────────────────────────────────────
+# Variables d'environnement (NETTOYÉES)
+# ──────────────────────────────────────────────
+FB_PAGE_ID = _nettoyer_secret(os.environ["FB_PAGE_ID"])
+FB_PAGE_ACCESS_TOKEN = _nettoyer_secret(os.environ["FB_PAGE_ACCESS_TOKEN"])
+GEMINI_API_KEY = _nettoyer_secret(os.environ["GEMINI_API_KEY_STORY"])
 
 # ──────────────────────────────────────────────
 # Constantes
@@ -53,27 +74,6 @@ TIMEOUT = 60
 
 
 # ──────────────────────────────────────────────
-# Nettoyage des textes
-# ──────────────────────────────────────────────
-def _nettoyer_texte(texte: str) -> str:
-    """
-    Supprime les caractères Unicode invisibles (LRM, RLM, BOM, zero-width)
-    et le formatage Markdown (**gras**, *italique*) qui font planter les HTTP headers.
-    """
-    # Caractères invisibles Unicode
-    texte = re.sub(
-        r'[\u200e\u200f\u200b\u200c\u200d\ufeff\u00ad\u2060\u180e\u202a-\u202e\u2066-\u2069]',
-        '',
-        texte,
-    )
-    # Markdown gras/italique
-    texte = texte.replace('**', '').replace('*', '')
-    # Caractères non-imprimables (sauf newline/tab)
-    texte = ''.join(c for c in texte if c.isprintable() or c in '\n\t')
-    return texte.strip()
-
-
-# ──────────────────────────────────────────────
 # Utilitaires
 # ──────────────────────────────────────────────
 def _requete_avec_retry(
@@ -86,80 +86,54 @@ def _requete_avec_retry(
     files: dict | None = None,
     timeout: int = TIMEOUT,
 ) -> requests.Response:
-    """Requête HTTP avec retries sur 429 / 5xx / timeout / connexion."""
     derniere_erreur: Exception | None = None
 
     for tentative in range(1, MAX_RETRIES + 1):
         try:
             reponse = requests.request(
-                method=methode,
-                url=url,
-                headers=headers,
-                json=json_data,
-                data=data,
-                files=files,
-                timeout=timeout,
+                method=methode, url=url, headers=headers,
+                json=json_data, data=data, files=files, timeout=timeout,
             )
-
             if reponse.status_code == 429 or reponse.status_code >= 500:
                 attente = RETRY_DELAY * tentative
-                print(
-                    f"  ⚠️  HTTP {reponse.status_code} — retry dans {attente}s "
-                    f"({tentative}/{MAX_RETRIES})"
-                )
-                derniere_erreur = requests.exceptions.HTTPError(
-                    f"HTTP {reponse.status_code}", response=reponse
-                )
+                print(f"  ⚠️  HTTP {reponse.status_code} — retry dans {attente}s ({tentative}/{MAX_RETRIES})")
+                derniere_erreur = requests.exceptions.HTTPError(f"HTTP {reponse.status_code}", response=reponse)
                 time.sleep(attente)
                 continue
-
             reponse.raise_for_status()
             return reponse
-
         except requests.exceptions.Timeout as e:
             derniere_erreur = e
-            attente = RETRY_DELAY * tentative
-            print(f"  ⚠️  Timeout — retry dans {attente}s ({tentative}/{MAX_RETRIES})")
-            time.sleep(attente)
-
+            print(f"  ⚠️  Timeout — retry dans {RETRY_DELAY * tentative}s")
+            time.sleep(RETRY_DELAY * tentative)
         except requests.exceptions.ConnectionError as e:
             derniere_erreur = e
-            attente = RETRY_DELAY * tentative
-            print(f"  ⚠️  Connexion — retry dans {attente}s ({tentative}/{MAX_RETRIES})")
-            time.sleep(attente)
-
+            print(f"  ⚠️  Connexion — retry dans {RETRY_DELAY * tentative}s")
+            time.sleep(RETRY_DELAY * tentative)
         except requests.exceptions.HTTPError:
             raise
-
     raise derniere_erreur  # type: ignore[misc]
 
 
 def _erreur_facebook(e: requests.exceptions.HTTPError, contexte: str) -> RuntimeError:
-    """Extrait un message clair d'une erreur Facebook Graph."""
     corps, code = "", "N/A"
     if e.response is not None:
         code = e.response.status_code
         try:
             err = e.response.json().get("error", {})
-            corps = (
-                f"[{err.get('type', '?')}] "
-                f"{err.get('message', '?')} "
-                f"(code {err.get('code', '?')})"
-            )
+            corps = f"[{err.get('type','?')}] {err.get('message','?')} (code {err.get('code','?')})"
         except Exception:
             corps = e.response.text[:400]
     return RuntimeError(f"Facebook Graph ({contexte}, HTTP {code}) : {corps}")
 
 
 def _extraire_image_base64(resultat: dict) -> str:
-    """Extrait les données image base64 d'une réponse API Interactions."""
     if "output_image" in resultat:
         oi = resultat["output_image"]
         if isinstance(oi, dict) and "data" in oi:
             return oi["data"]
         if isinstance(oi, str):
             return oi
-
     if "output" in resultat:
         for item in resultat["output"]:
             if isinstance(item, dict):
@@ -169,27 +143,20 @@ def _extraire_image_base64(resultat: dict) -> str:
                     return item["inlineData"]["data"]
                 if "inline_data" in item:
                     return item["inline_data"]["data"]
-
     if "candidates" in resultat:
         for part in resultat["candidates"][0]["content"]["parts"]:
             if "inlineData" in part:
                 return part["inlineData"]["data"]
             if "inline_data" in part:
                 return part["inline_data"]["data"]
-
-    raise ValueError(
-        f"Impossible d'extraire l'image. Clés : {list(resultat.keys())}"
-    )
+    raise ValueError(f"Impossible d'extraire l'image. Clés : {list(resultat.keys())}")
 
 
 # ──────────────────────────────────────────────
-# Génération du texte (Gemini — Projet A)
+# Génération du texte
 # ──────────────────────────────────────────────
 def generer_texte_story() -> tuple[str, str, str]:
-    """Retourne (pilier, sujet, texte)."""
-    pilier = random.choices(
-        PILLAR_KEYS, weights=[PILLAR_WEIGHTS[k] for k in PILLAR_KEYS], k=1
-    )[0]
+    pilier = random.choices(PILLAR_KEYS, weights=[PILLAR_WEIGHTS[k] for k in PILLAR_KEYS], k=1)[0]
     style_prompt = random.choice(STORY_PROMPTS)
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
 
@@ -221,83 +188,56 @@ def generer_texte_story() -> tuple[str, str, str]:
             },
             timeout=30,
         )
-
-        texte = (
-            reponse.json()["candidates"][0]["content"]["parts"][0]["text"]
-            .strip()
-            .strip('"')
-            .split("\n")[0]
-        )
+        texte = reponse.json()["candidates"][0]["content"]["parts"][0]["text"].strip().strip('"').split("\n")[0]
         texte = _nettoyer_texte(texte)
-
         if not texte:
             raise ValueError("Réponse texte vide.")
-
         print(f"  ✅ Texte : « {texte} »")
         return pilier, sujet, texte
-
     except requests.exceptions.HTTPError as e:
         code = e.response.status_code if e.response is not None else "N/A"
         corps = e.response.text[:400] if e.response is not None else ""
         raise RuntimeError(f"Gemini texte [story] (HTTP {code}) : {corps}") from e
-
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"Gemini texte [story] injoignable : {e}") from e
 
 
 # ──────────────────────────────────────────────
-# Génération de l'image (Gemini Interactions API)
+# Génération de l'image
 # ──────────────────────────────────────────────
 def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
-    """Génère une image verticale 9:16 liée au texte."""
     prompt = _nettoyer_texte(
         f"Illustration verticale 9:16 pour ce texte : {texte}\n"
         f"Axe : {PILLARS[pilier]['label']}\n"
         f"Style : {STYLE_IMAGE_SUFFIX}\n"
         f"L'image doit refléter visuellement le contenu du texte."
     )
-
     try:
         print("  🖼️  Image via Gemini [story]...")
         reponse = _requete_avec_retry(
             "POST",
             GEMINI_IMAGE_URL,
-            headers={
-                "x-goog-api-key": GEMINI_API_KEY,
-                "Content-Type": "application/json",
-            },
+            headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
             json_data={
                 "model": GEMINI_IMAGE_MODEL,
                 "input": [{"type": "text", "text": prompt}],
-                "response_format": {
-                    "type": "image",
-                    "aspect_ratio": "9:16",
-                    "image_size": "1K",
-                },
+                "response_format": {"type": "image", "aspect_ratio": "9:16", "image_size": "1K"},
             },
             timeout=120,
         )
-
-        resultat = reponse.json()
-        image_b64 = _extraire_image_base64(resultat)
-
+        image_b64 = _extraire_image_base64(reponse.json())
         with open(chemin, "wb") as f:
             f.write(base64.b64decode(image_b64))
-
         taille = os.path.getsize(chemin)
         if taille < 1024:
             raise ValueError(f"Image suspecte ({taille} octets).")
-
         print(f"  ✅ Image : {chemin} ({taille:,} octets)")
-
     except requests.exceptions.HTTPError as e:
         code = e.response.status_code if e.response is not None else "N/A"
         corps = e.response.text[:400] if e.response is not None else ""
         raise RuntimeError(f"Gemini image [story] (HTTP {code}) : {corps}") from e
-
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"Gemini image [story] injoignable : {e}") from e
-
     except (KeyError, IndexError, ValueError) as e:
         raise RuntimeError(f"Réponse Gemini image [story] invalide : {e}") from e
 
@@ -306,7 +246,6 @@ def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
 # Incrustation du texte (ffmpeg)
 # ──────────────────────────────────────────────
 def incruster_texte(image_in: str, texte: str, image_out: str) -> None:
-    """Superpose le texte sur l'image via ffmpeg."""
     texte_ffmpeg = texte.replace("'", "\\'").replace(":", "\\:").replace("%", "%%")
     filtre = (
         f"scale={STORY_WIDTH}:{STORY_HEIGHT}:force_original_aspect_ratio=increase,"
@@ -316,21 +255,15 @@ def incruster_texte(image_in: str, texte: str, image_out: str) -> None:
         "x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=0x0D0D0D@0.7:boxborderw=30:"
         "line_spacing=14"
     )
-
     try:
         print("  🎨 Incrustation texte via ffmpeg...")
         subprocess.run(
             ["ffmpeg", "-i", image_in, "-vf", filtre, "-frames:v", "1", "-y", image_out],
-            check=True,
-            capture_output=True,
-            text=True,
+            check=True, capture_output=True, text=True,
         )
         print(f"  ✅ Image finale : {image_out}")
-
     except FileNotFoundError:
-        raise RuntimeError(
-            "ffmpeg absent. Installez : sudo apt-get install -y ffmpeg fonts-dejavu-core"
-        )
+        raise RuntimeError("ffmpeg absent. Installez : sudo apt-get install -y ffmpeg fonts-dejavu-core")
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ffmpeg échec (code {e.returncode}) :\n{e.stderr[:500]}") from e
 
@@ -339,28 +272,22 @@ def incruster_texte(image_in: str, texte: str, image_out: str) -> None:
 # Facebook Graph API
 # ──────────────────────────────────────────────
 def uploader_photo_non_publiee(image_path: str) -> str:
-    """Upload une photo non publiée, retourne son photo_id."""
     endpoint = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{FB_PAGE_ID}/photos"
-
     try:
         print("  📤 Upload photo Facebook...")
         with open(image_path, "rb") as f:
             reponse = _requete_avec_retry(
-                "POST",
-                endpoint,
+                "POST", endpoint,
                 data={"published": "false", "access_token": FB_PAGE_ACCESS_TOKEN},
                 files={"source": (os.path.basename(image_path), f, "image/png")},
                 timeout=TIMEOUT,
             )
-
         resultat = reponse.json()
         photo_id = resultat.get("id")
         if not photo_id:
             raise ValueError(f"Réponse FB inattendue : {resultat}")
-
         print(f"  ✅ Photo ID : {photo_id}")
         return photo_id
-
     except requests.exceptions.HTTPError as e:
         raise _erreur_facebook(e, "upload photo") from e
     except OSError as e:
@@ -368,25 +295,19 @@ def uploader_photo_non_publiee(image_path: str) -> str:
 
 
 def publier_story(photo_id: str) -> dict:
-    """Publie la story à partir du photo_id."""
     endpoint = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{FB_PAGE_ID}/photo_stories"
-
     try:
         print("  🚀 Publication story...")
         reponse = _requete_avec_retry(
-            "POST",
-            endpoint,
+            "POST", endpoint,
             data={"photo_id": photo_id, "access_token": FB_PAGE_ACCESS_TOKEN},
             timeout=TIMEOUT,
         )
-
         resultat = reponse.json()
         if "id" not in resultat:
             raise ValueError(f"Réponse FB inattendue : {resultat}")
-
         print("  ✅ Story publiée !")
         return resultat
-
     except requests.exceptions.HTTPError as e:
         raise _erreur_facebook(e, "publication story") from e
 
