@@ -1,0 +1,43 @@
+name: Auto-post Nyavo Channel — Feed
+
+on:
+  schedule:
+    # Créneau 1 — pause déjeuner (10h00 UTC = 13h Madagascar / 12h France)
+    # Lundi à vendredi
+    - cron: "0 10 * * 1-5"
+    # Créneau 3 — soirée (17h30 UTC = 20h30 Madagascar / 19h30 France)
+    # Uniquement mardi/mercredi/jeudi (2e post, jours à plus fort engagement)
+    - cron: "30 17 * * 2-4"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout du repo
+        uses: actions/checkout@v4
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installer les dépendances
+        run: pip install requests
+
+      - name: Publier le post
+        env:
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+        run: python post_to_facebook.py
+
+      - name: Sauvegarder l'historique anti-répétition
+        run: |
+          git config user.name "nyavo-bot"
+          git config user.email "bot@nyavochannel.local"
+          git add history.json
+          git diff --staged --quiet || git commit -m "chore: update content history [skip ci]"
+          git push
