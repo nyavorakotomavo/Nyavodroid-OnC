@@ -5,17 +5,18 @@ Nyavo Channel — publication multi-formats.
   - 🖼️  Image + Texte  (POST /photos)
   - 🎬 Reel vidéo     (POST /video_reels — upload 3 phases)
 
-La Story est gérée séparément par post_story.py.
+La Story est gérée séparément par post_story.py (Projet Gemini A).
 
 Rotation selon l'heure UTC :
   07h → texte_seul | 09h → image_texte | 17h → reel
   workflow_dispatch → aléatoire pondéré
 
-Texte : Mistral → fallback Gemini
-Images : Gemini
+Texte : Mistral → fallback Gemini [content]
+Images : Gemini [content]
 Vidéo : ffmpeg (assemblage local)
 
-Secrets : FB_PAGE_ID, FB_PAGE_ACCESS_TOKEN, GEMINI_API_KEY, MISTRAL_API_KEY (opt.)
+Projet Gemini : nyavo-content (clé dédiée GEMINI_API_KEY_CONTENT)
+Secrets : FB_PAGE_ID, FB_PAGE_ACCESS_TOKEN, GEMINI_API_KEY_CONTENT, MISTRAL_API_KEY (opt.)
 Dépendances : requests>=2.31.0 | ffmpeg + fonts-dejavu-core
 """
 
@@ -35,6 +36,8 @@ from content_config import (
     PILLARS,
     STORY_PROMPTS,
     STYLE_IMAGE_SUFFIX,
+    SUJETS_PAR_PILIER,
+    TON_EDITORIAL,
 )
 
 # ──────────────────────────────────────────────
@@ -42,7 +45,7 @@ from content_config import (
 # ──────────────────────────────────────────────
 FB_PAGE_ID = os.environ["FB_PAGE_ID"]
 FB_PAGE_ACCESS_TOKEN = os.environ["FB_PAGE_ACCESS_TOKEN"]
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+GEMINI_API_KEY = os.environ["GEMINI_API_KEY_CONTENT"]  # Projet B dédié
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
 
 # ──────────────────────────────────────────────
@@ -65,11 +68,10 @@ GEMINI_IMAGE_URL = (
     "models/gemini-2.5-flash-image:generateContent"
 )
 
-# Retries (augmenté pour les images Gemini)
 MAX_RETRIES = 5
 RETRY_DELAY = 20
 TIMEOUT = 60
-DELAY_ENTRE_IMAGES = 15  # pause anti-429 entre chaque image
+DELAY_ENTRE_IMAGES = 15  # pause anti-429 entre chaque image Reel
 
 
 # ══════════════════════════════════════════════
@@ -183,7 +185,7 @@ def choisir_pilier() -> str:
 
 
 # ══════════════════════════════════════════════
-#  GÉNÉRATION TEXTE (Mistral → fallback Gemini)
+#  GÉNÉRATION TEXTE (Mistral → fallback Gemini B)
 # ══════════════════════════════════════════════
 def _texte_mistral(prompt: str) -> str:
     """Appel Mistral API."""
@@ -206,7 +208,7 @@ def _texte_mistral(prompt: str) -> str:
 
 
 def _texte_gemini(prompt: str) -> str:
-    """Appel Gemini API."""
+    """Appel Gemini API [content]."""
     reponse = _requete_avec_retry(
         "POST",
         f"{GEMINI_TEXT_URL}?key={GEMINI_API_KEY}",
@@ -221,7 +223,7 @@ def _texte_gemini(prompt: str) -> str:
 
 
 def generer_texte(prompt: str, contexte: str = "") -> str:
-    """Génère du texte : Mistral d'abord, Gemini en fallback."""
+    """Génère du texte : Mistral d'abord, Gemini [content] en fallback."""
     if MISTRAL_API_KEY:
         try:
             print(f"  📝 Texte via Mistral {contexte}...")
@@ -230,17 +232,17 @@ def generer_texte(prompt: str, contexte: str = "") -> str:
             print(f"  ⚠️  Mistral échec : {e}")
 
     try:
-        print(f"  📝 Texte via Gemini {contexte}...")
+        print(f"  📝 Texte via Gemini [content] {contexte}...")
         return _texte_gemini(prompt)
     except Exception as e:
         raise RuntimeError(f"Texte impossible (Mistral + Gemini KO) : {e}") from e
 
 
 # ══════════════════════════════════════════════
-#  GÉNÉRATION IMAGE (Gemini)
+#  GÉNÉRATION IMAGE (Gemini B)
 # ══════════════════════════════════════════════
 def generer_image(prompt: str, chemin: str) -> None:
-    """Génère une image 9:16 via Gemini et sauvegarde en PNG."""
+    """Génère une image 9:16 via Gemini [content] et sauvegarde en PNG."""
     reponse = _requete_avec_retry(
         "POST",
         f"{GEMINI_IMAGE_URL}?key={GEMINI_API_KEY}",
@@ -271,18 +273,29 @@ def generer_image(prompt: str, chemin: str) -> None:
 #  FORMAT 1 : TEXTE SEUL
 # ══════════════════════════════════════════════
 def publier_texte_seul(pilier: str) -> dict:
-    """Publie un post texte simple. POST /{page-id}/feed"""
+    """Publie un post texte simple aligné sur la niche. POST /{page-id}/feed"""
     style = random.choice(STORY_PROMPTS)
+    sujet = random.choice(SUJETS_PAR_PILIER[pilier])
+
     prompt = (
-        f"Écris un post Facebook court et engageant (3-5 lignes) en français, "
-        f"catégorie '{PILLARS[pilier]['label']}'.\n"
-        f"Style : {style}.\n"
-        f"Inclus 2-3 hashtags pertinents à la fin.\n"
-        f"Pas de guillemets, pas de titre, juste le texte du post."
+        f"Tu es Nyavo Channel, une chaîne tech qui révèle les mécanismes "
+        f"cachés du monde numérique.\n\n"
+        f"Axe éditorial : {PILLARS[pilier]['label']}\n"
+        f"Sujet imposé : {sujet}\n"
+        f"Format : {style}\n\n"
+        f"Consignes :\n"
+        f"- Écris un post Facebook de 3-5 lignes en français\n"
+        f"- Ton : {TON_EDITORIAL}\n"
+        f"- Inclus 2-3 termes techniques précis\n"
+        f"- Termine par 2-3 hashtags pertinents\n"
+        f"- Pas de guillemets, pas de titre\n"
+        f"- Interdit : généralités, banalités, hors-sujet\n"
     )
 
     texte = generer_texte(prompt, "(post texte)")
-    print(f"\n📌 Texte :\n{texte}\n")
+    print(f"\n📌 Axe    : {PILLARS[pilier]['label']}")
+    print(f"📌 Sujet  : {sujet}")
+    print(f"📌 Texte  :\n{texte}\n")
 
     endpoint = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{FB_PAGE_ID}/feed"
 
@@ -307,24 +320,34 @@ def publier_texte_seul(pilier: str) -> dict:
 #  FORMAT 2 : IMAGE + TEXTE
 # ══════════════════════════════════════════════
 def publier_image_texte(pilier: str) -> dict:
-    """Publie une photo avec légende. POST /{page-id}/photos"""
+    """Publie une photo avec légende alignée sur la niche. POST /{page-id}/photos"""
     label = PILLARS[pilier]["label"]
+    sujet = random.choice(SUJETS_PAR_PILIER[pilier])
 
     # Légende
     prompt_legende = (
-        f"Écris une légende Facebook courte et engageante (2-3 lignes) en français, "
-        f"catégorie '{label}'. Inclus 2-3 hashtags. Pas de guillemets."
+        f"Tu es Nyavo Channel.\n"
+        f"Axe : {label}\n"
+        f"Sujet : {sujet}\n"
+        f"Écris une légende Facebook de 2-3 lignes en français.\n"
+        f"Ton : {TON_EDITORIAL}\n"
+        f"Inclus 2-3 hashtags. Pas de guillemets."
     )
     legende = generer_texte(prompt_legende, "(légende)")
 
-    # Image
-    prompt_image = f"{label}, {STYLE_IMAGE_SUFFIX}, vertical composition, high quality"
+    # Image liée au sujet
+    prompt_image = (
+        f"Illustration verticale 9:16 sur le sujet : {sujet}\n"
+        f"Axe : {label}\n"
+        f"Style : {STYLE_IMAGE_SUFFIX}"
+    )
     print("  🖼️  Génération image...")
     generer_image(prompt_image, IMAGE_PATH)
 
-    print(f"\n📌 Légende :\n{legende}\n")
+    print(f"\n📌 Axe     : {label}")
+    print(f"📌 Sujet   : {sujet}")
+    print(f"📌 Légende :\n{legende}\n")
 
-    # Publication
     endpoint = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{FB_PAGE_ID}/photos"
 
     try:
@@ -351,18 +374,32 @@ def publier_image_texte(pilier: str) -> dict:
 # ══════════════════════════════════════════════
 #  FORMAT 3 : REEL VIDÉO
 # ══════════════════════════════════════════════
-def _generer_phrases_reel(pilier: str) -> list[str]:
-    """Génère NB_IMAGES_REEL phrases courtes pour le Reel."""
+def _generer_phrases_reel(pilier: str) -> tuple[str, list[str]]:
+    """
+    Génère les phrases du Reel alignées sur la niche.
+    Retourne (sujet, [phrase_1, ..., phrase_N]).
+    """
     label = PILLARS[pilier]["label"]
+    sujet = random.choice(SUJETS_PAR_PILIER[pilier])
     style = random.choice(STORY_PROMPTS)
+
     prompt = (
-        f"Écris {style}, en français, catégorie '{label}'.\n"
-        f"Génère exactement {NB_IMAGES_REEL} phrases très courtes "
-        f"(moins de 8 mots chacune), numérotées 1 à {NB_IMAGES_REEL}, "
-        f"une par ligne.\nFormat :\n1. Phrase une\n2. Phrase deux\n..."
+        f"Tu es Nyavo Channel, une chaîne tech immersive.\n\n"
+        f"Axe : {label}\n"
+        f"Sujet imposé : {sujet}\n"
+        f"Format : {style}\n\n"
+        f"Consignes :\n"
+        f"- Génère exactement {NB_IMAGES_REEL} phrases très courtes "
+        f"(moins de 8 mots chacune)\n"
+        f"- Numérotées de 1 à {NB_IMAGES_REEL}, une par ligne\n"
+        f"- Ton : {TON_EDITORIAL}\n"
+        f"- Chaque phrase doit être un fait/chiffre/question percutant\n"
+        f"- Progression narrative : accroche → développement → révélation\n"
+        f"- Interdit : généralités, hors-sujet\n"
+        f"Format :\n1. Phrase une\n2. Phrase deux\n..."
     )
 
-    texte_brut = generer_texte(prompt, f"({NB_IMAGES_REEL} phrases Reel)")
+    texte_brut = generer_texte(prompt, f"(Reel : {sujet})")
 
     phrases = []
     for ligne in texte_brut.split("\n"):
@@ -376,22 +413,25 @@ def _generer_phrases_reel(pilier: str) -> list[str]:
         raise ValueError(
             f"Phrases insuffisantes ({len(phrases)}/{NB_IMAGES_REEL}) : {texte_brut}"
         )
-    return phrases[:NB_IMAGES_REEL]
+    return sujet, phrases[:NB_IMAGES_REEL]
 
 
 def _generer_images_reel(pilier: str, phrases: list[str]) -> list[str]:
-    """Génère les images séquentielles avec pause anti-429."""
+    """Génère les images du Reel, chacune liée à sa phrase."""
     label = PILLARS[pilier]["label"]
     chemins = []
 
     for i, phrase in enumerate(phrases, 1):
         chemin = f"reel_img_{i}.png"
         prompt = (
-            f"{label}, {STYLE_IMAGE_SUFFIX}, vertical composition, "
-            f"scene {i}/{NB_IMAGES_REEL}, {phrase}"
+            f"Illustration verticale 9:16, scène {i}/{NB_IMAGES_REEL}.\n"
+            f"Texte de la scène : « {phrase} »\n"
+            f"Axe : {label}\n"
+            f"Style : {STYLE_IMAGE_SUFFIX}\n"
+            f"L'image doit illustrer visuellement cette phrase précise."
         )
 
-        # Pause entre les images pour éviter le rate limit 429
+        # Pause entre les images pour éviter le rate limit
         if i > 1:
             pause = DELAY_ENTRE_IMAGES + random.uniform(0, 5)
             print(f"  ⏳ Pause anti-rate-limit : {pause:.0f}s...")
@@ -473,8 +513,10 @@ def _assembler_video(images: list[str], textes: list[str], sortie: str) -> None:
 
 def publier_reel(pilier: str) -> dict:
     """Publie un Reel vidéo. POST /{page-id}/video_reels (3 phases)."""
-    phrases = _generer_phrases_reel(pilier)
-    print(f"\n📌 Phrases Reel :")
+    sujet, phrases = _generer_phrases_reel(pilier)
+    print(f"\n📌 Axe   : {PILLARS[pilier]['label']}")
+    print(f"📌 Sujet : {sujet}")
+    print(f"📌 Phrases Reel :")
     for i, p in enumerate(phrases, 1):
         print(f"   {i}. {p}")
 
@@ -537,7 +579,7 @@ def publier_reel(pilier: str) -> dict:
 # ══════════════════════════════════════════════
 def main() -> None:
     print("=" * 60)
-    print("🎬 Nyavo Channel — Publication multi-formats")
+    print("🎬 Nyavo Channel — Multi-formats [Projet Gemini B]")
     print("=" * 60)
 
     type_contenu = choisir_type_contenu()
