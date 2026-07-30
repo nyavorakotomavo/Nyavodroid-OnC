@@ -5,11 +5,9 @@ Nyavo Channel — publication multi-formats.
   - 🖼️  Image + Texte  (POST /photos)
   - 🎬 Reel vidéo     (POST /video_reels — upload 3 phases)
 
-La Story est gérée séparément par post_story.py (Projet Gemini A).
-
 Texte : Mistral → fallback Gemini [content]
 Images : Gemini Interactions API [content] — gemini-3.1-flash-image
-Vidéo : ffmpeg (assemblage local)
+Vidéo : ffmpeg
 
 Projet Gemini : nyavo-content (clé dédiée GEMINI_API_KEY_CONTENT)
 Secrets : FB_PAGE_ID, FB_PAGE_ACCESS_TOKEN, GEMINI_API_KEY_CONTENT, MISTRAL_API_KEY (opt.)
@@ -19,6 +17,7 @@ Dépendances : requests>=2.31.0 | ffmpeg + fonts-dejavu-core
 import base64
 import os
 import random
+import re
 import subprocess
 import sys
 import time
@@ -55,14 +54,10 @@ DUREE_PAR_IMAGE = 2.5
 AUDIO_PATH = "background_music.mp3"
 
 MISTRAL_TEXT_URL = "https://api.mistral.ai/v1/chat/completions"
-
-# ✅ Texte : API generateContent (inchangé)
 GEMINI_TEXT_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
     "models/gemini-2.5-flash:generateContent"
 )
-
-# ✅ Image : NOUVELLE API Interactions
 GEMINI_IMAGE_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image"
 
@@ -70,6 +65,24 @@ MAX_RETRIES = 5
 RETRY_DELAY = 20
 TIMEOUT = 60
 DELAY_ENTRE_IMAGES = 15
+
+
+# ══════════════════════════════════════════════
+#  NETTOYAGE DES TEXTES
+# ══════════════════════════════════════════════
+def _nettoyer_texte(texte: str) -> str:
+    """
+    Supprime les caractères Unicode invisibles (LRM, RLM, BOM, zero-width)
+    et le formatage Markdown (**gras**, *italique*) qui font planter les HTTP headers.
+    """
+    texte = re.sub(
+        r'[\u200e\u200f\u200b\u200c\u200d\ufeff\u00ad\u2060\u180e\u202a-\u202e\u2066-\u2069]',
+        '',
+        texte,
+    )
+    texte = texte.replace('**', '').replace('*', '')
+    texte = ''.join(c for c in texte if c.isprintable() or c in '\n\t')
+    return texte.strip()
 
 
 # ══════════════════════════════════════════════
@@ -151,11 +164,7 @@ def _erreur_facebook(e: requests.exceptions.HTTPError, contexte: str) -> Runtime
 
 
 def _extraire_image_base64(resultat: dict) -> str:
-    """
-    Extrait les données image base64 d'une réponse API Interactions.
-    Cherche dans output_image, output[], et candidates[] pour compatibilité.
-    """
-    # Format API Interactions : output_image
+    """Extrait les données image base64 d'une réponse API Interactions."""
     if "output_image" in resultat:
         oi = resultat["output_image"]
         if isinstance(oi, dict) and "data" in oi:
@@ -163,7 +172,6 @@ def _extraire_image_base64(resultat: dict) -> str:
         if isinstance(oi, str):
             return oi
 
-    # Format API Interactions : output[]
     if "output" in resultat:
         for item in resultat["output"]:
             if isinstance(item, dict):
@@ -174,7 +182,6 @@ def _extraire_image_base64(resultat: dict) -> str:
                 if "inline_data" in item:
                     return item["inline_data"]["data"]
 
-    # Format legacy generateContent : candidates[]
     if "candidates" in resultat:
         for part in resultat["candidates"][0]["content"]["parts"]:
             if "inlineData" in part:
@@ -183,8 +190,7 @@ def _extraire_image_base64(resultat: dict) -> str:
                 return part["inline_data"]["data"]
 
     raise ValueError(
-        f"Impossible d'extraire l'image de la réponse. "
-        f"Clés disponibles : {list(resultat.keys())}"
+        f"Impossible d'extraire l'image. Clés : {list(resultat.keys())}"
     )
 
 
@@ -192,11 +198,7 @@ def _extraire_image_base64(resultat: dict) -> str:
 #  CHOIX DU TYPE DE CONTENU
 # ══════════════════════════════════════════════
 def choisir_type_contenu() -> str:
-    """
-    Détermine le format selon l'heure UTC.
-      07h → texte_seul | 09h → image_texte | 17h → reel
-      Sinon → aléatoire pondéré.
-    """
+    """07h → texte_seul | 09h → image_texte | 17h → reel | sinon → aléatoire."""
     heure = datetime.now(timezone.utc).hour
 
     if 6 <= heure < 8:
@@ -240,11 +242,11 @@ def _texte_mistral(prompt: str) -> str:
         },
         timeout=30,
     )
-    return reponse.json()["choices"][0]["message"]["content"].strip()
+    return _nettoyer_texte(reponse.json()["choices"][0]["message"]["content"])
 
 
 def _texte_gemini(prompt: str) -> str:
-    """Appel Gemini API [content] — generateContent (texte uniquement)."""
+    """Appel Gemini API [content]."""
     reponse = _requete_avec_retry(
         "POST",
         f"{GEMINI_TEXT_URL}?key={GEMINI_API_KEY}",
@@ -255,7 +257,9 @@ def _texte_gemini(prompt: str) -> str:
         },
         timeout=30,
     )
-    return reponse.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+    return _nettoyer_texte(
+        reponse.json()["candidates"][0]["content"]["parts"][0]["text"]
+    )
 
 
 def generer_texte(prompt: str, contexte: str = "") -> str:
@@ -278,11 +282,9 @@ def generer_texte(prompt: str, contexte: str = "") -> str:
 #  GÉNÉRATION IMAGE (Gemini Interactions API)
 # ══════════════════════════════════════════════
 def generer_image(prompt: str, chemin: str) -> None:
-    """
-    Génère une image 9:16 via Gemini Interactions API [content].
-    Endpoint : POST /v1beta/interactions
-    Modèle : gemini-3.1-flash-image
-    """
+    """Génère une image 9:16 via Gemini Interactions API."""
+    prompt_propre = _nettoyer_texte(prompt)
+
     reponse = _requete_avec_retry(
         "POST",
         GEMINI_IMAGE_URL,
@@ -292,7 +294,7 @@ def generer_image(prompt: str, chemin: str) -> None:
         },
         json_data={
             "model": GEMINI_IMAGE_MODEL,
-            "input": [{"type": "text", "text": prompt}],
+            "input": [{"type": "text", "text": prompt_propre}],
             "response_format": {
                 "type": "image",
                 "aspect_ratio": "9:16",
@@ -318,7 +320,7 @@ def generer_image(prompt: str, chemin: str) -> None:
 #  FORMAT 1 : TEXTE SEUL
 # ══════════════════════════════════════════════
 def publier_texte_seul(pilier: str) -> dict:
-    """Publie un post texte simple aligné sur la niche. POST /{page-id}/feed"""
+    """Publie un post texte simple. POST /{page-id}/feed"""
     style = random.choice(STORY_PROMPTS)
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
 
@@ -333,7 +335,7 @@ def publier_texte_seul(pilier: str) -> dict:
         f"- Ton : {TON_EDITORIAL}\n"
         f"- Inclus 2-3 termes techniques précis\n"
         f"- Termine par 2-3 hashtags pertinents\n"
-        f"- Pas de guillemets, pas de titre\n"
+        f"- Pas de guillemets, pas de titre, pas de Markdown\n"
         f"- Interdit : généralités, banalités, hors-sujet\n"
     )
 
@@ -365,22 +367,20 @@ def publier_texte_seul(pilier: str) -> dict:
 #  FORMAT 2 : IMAGE + TEXTE
 # ══════════════════════════════════════════════
 def publier_image_texte(pilier: str) -> dict:
-    """Publie une photo avec légende alignée sur la niche. POST /{page-id}/photos"""
+    """Publie une photo avec légende. POST /{page-id}/photos"""
     label = PILLARS[pilier]["label"]
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
 
-    # Légende
     prompt_legende = (
         f"Tu es Nyavo Channel.\n"
         f"Axe : {label}\n"
         f"Sujet : {sujet}\n"
         f"Écris une légende Facebook de 2-3 lignes en français.\n"
         f"Ton : {TON_EDITORIAL}\n"
-        f"Inclus 2-3 hashtags. Pas de guillemets."
+        f"Inclus 2-3 hashtags. Pas de guillemets, pas de Markdown."
     )
     legende = generer_texte(prompt_legende, "(légende)")
 
-    # Image liée au sujet
     prompt_image = (
         f"Illustration verticale 9:16 sur le sujet : {sujet}\n"
         f"Axe : {label}\n"
@@ -420,10 +420,7 @@ def publier_image_texte(pilier: str) -> dict:
 #  FORMAT 3 : REEL VIDÉO
 # ══════════════════════════════════════════════
 def _generer_phrases_reel(pilier: str) -> tuple[str, list[str]]:
-    """
-    Génère les phrases du Reel alignées sur la niche.
-    Retourne (sujet, [phrase_1, ..., phrase_N]).
-    """
+    """Retourne (sujet, [phrase_1, ..., phrase_N])."""
     label = PILLARS[pilier]["label"]
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
     style = random.choice(STORY_PROMPTS)
@@ -438,8 +435,9 @@ def _generer_phrases_reel(pilier: str) -> tuple[str, list[str]]:
         f"(moins de 8 mots chacune)\n"
         f"- Numérotées de 1 à {NB_IMAGES_REEL}, une par ligne\n"
         f"- Ton : {TON_EDITORIAL}\n"
-        f"- Chaque phrase doit être un fait/chiffre/question percutant\n"
-        f"- Progression narrative : accroche → développement → révélation\n"
+        f"- Chaque phrase = un fait/chiffre/question percutant\n"
+        f"- Progression : accroche → développement → révélation\n"
+        f"- PAS de Markdown, PAS d'astérisques, PAS de caractères spéciaux\n"
         f"- Interdit : généralités, hors-sujet\n"
         f"Format :\n1. Phrase une\n2. Phrase deux\n..."
     )
@@ -448,9 +446,10 @@ def _generer_phrases_reel(pilier: str) -> tuple[str, list[str]]:
 
     phrases = []
     for ligne in texte_brut.split("\n"):
-        ligne = ligne.strip()
+        ligne = _nettoyer_texte(ligne)
         if ligne and ligne[0].isdigit() and "." in ligne:
             phrase = ligne.split(".", 1)[1].strip()
+            phrase = _nettoyer_texte(phrase)
             if phrase:
                 phrases.append(phrase)
 
@@ -470,13 +469,12 @@ def _generer_images_reel(pilier: str, phrases: list[str]) -> list[str]:
         chemin = f"reel_img_{i}.png"
         prompt = (
             f"Illustration verticale 9:16, scène {i}/{NB_IMAGES_REEL}.\n"
-            f"Texte de la scène : « {phrase} »\n"
+            f"Texte de la scène : {phrase}\n"
             f"Axe : {label}\n"
             f"Style : {STYLE_IMAGE_SUFFIX}\n"
             f"L'image doit illustrer visuellement cette phrase précise."
         )
 
-        # Pause entre les images pour éviter le rate limit
         if i > 1:
             pause = DELAY_ENTRE_IMAGES + random.uniform(0, 5)
             print(f"  ⏳ Pause anti-rate-limit : {pause:.0f}s...")
@@ -495,14 +493,12 @@ def _assembler_video(images: list[str], textes: list[str], sortie: str) -> None:
     if not audio_existe:
         print(f"  ⚠️  '{AUDIO_PATH}' absent → vidéo sans son.")
 
-    # Inputs
     inputs: list[str] = []
     for img in images:
         inputs += ["-loop", "1", "-t", str(DUREE_PAR_IMAGE), "-i", img]
     if audio_existe:
         inputs += ["-i", AUDIO_PATH]
 
-    # Filtres
     n = len(images)
     concat = "".join(f"[{i}:v]" for i in range(n))
     filtres = [f"{concat}concat=n={n}:v=1:a=0[slideshow]"]
@@ -525,7 +521,6 @@ def _assembler_video(images: list[str], textes: list[str], sortie: str) -> None:
         )
     filtres.append(txt_chain + "[final]")
 
-    # Mapping
     map_args = ["-map", "[final]"]
     if audio_existe:
         map_args += ["-map", f"{n}:a"]
@@ -571,7 +566,6 @@ def publier_reel(pilier: str) -> dict:
     endpoint = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{FB_PAGE_ID}/video_reels"
 
     try:
-        # Phase 1 : start
         print("  📤 Reel — phase 1/3 (start)...")
         r1 = _requete_avec_retry(
             "POST", endpoint,
@@ -584,7 +578,6 @@ def publier_reel(pilier: str) -> dict:
         if not video_id or not upload_url:
             raise ValueError(f"Phase start échouée : {init}")
 
-        # Phase 2 : transfer
         print("  📤 Reel — phase 2/3 (transfer)...")
         with open(REEL_VIDEO_PATH, "rb") as f:
             _requete_avec_retry(
@@ -598,7 +591,6 @@ def publier_reel(pilier: str) -> dict:
                 timeout=300,
             )
 
-        # Phase 3 : finish
         print("  📤 Reel — phase 3/3 (finish)...")
         r3 = _requete_avec_retry(
             "POST", endpoint,
