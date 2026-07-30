@@ -12,7 +12,7 @@ Rotation selon l'heure UTC :
   workflow_dispatch → aléatoire pondéré
 
 Texte : Mistral → fallback Gemini [content]
-Images : Gemini [content]
+Images : Gemini [content] — modèle gemini-3.1-flash-image-preview
 Vidéo : ffmpeg (assemblage local)
 
 Projet Gemini : nyavo-content (clé dédiée GEMINI_API_KEY_CONTENT)
@@ -45,7 +45,7 @@ from content_config import (
 # ──────────────────────────────────────────────
 FB_PAGE_ID = os.environ["FB_PAGE_ID"]
 FB_PAGE_ACCESS_TOKEN = os.environ["FB_PAGE_ACCESS_TOKEN"]
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY_CONTENT"]  # Projet B dédié
+GEMINI_API_KEY = os.environ["GEMINI_API_KEY_CONTENT"]
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
 
 # ──────────────────────────────────────────────
@@ -63,15 +63,17 @@ GEMINI_TEXT_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
     "models/gemini-2.5-flash:generateContent"
 )
+# ✅ Modèle image corrigé : gemini-3.1-flash-image-preview
+#    (supporte generationConfig.imageConfig.aspectRatio)
 GEMINI_IMAGE_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-2.5-flash-image:generateContent"
+    "models/gemini-3.1-flash-image-preview:generateContent"
 )
 
 MAX_RETRIES = 5
 RETRY_DELAY = 20
 TIMEOUT = 60
-DELAY_ENTRE_IMAGES = 15  # pause anti-429 entre chaque image Reel
+DELAY_ENTRE_IMAGES = 15
 
 
 # ══════════════════════════════════════════════
@@ -258,7 +260,16 @@ def generer_image(prompt: str, chemin: str) -> None:
     )
 
     resultat = reponse.json()
-    image_b64 = resultat["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]
+
+    # Extraire l'image base64 de la réponse
+    image_b64 = None
+    for part in resultat["candidates"][0]["content"]["parts"]:
+        if "inlineData" in part:
+            image_b64 = part["inlineData"]["data"]
+            break
+
+    if not image_b64:
+        raise ValueError("Pas de données image dans la réponse Gemini.")
 
     with open(chemin, "wb") as f:
         f.write(base64.b64decode(image_b64))
