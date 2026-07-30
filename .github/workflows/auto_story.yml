@@ -1,39 +1,29 @@
-name: Auto-post Nyavo Channel — Stories
+name: Auto-post Nyavo Channel — Story
 
 on:
   schedule:
-    # Créneau matin — 07h00 UTC (10h Madagascar / 9h France)
     - cron: "0 7 * * 1-6"
-    # Créneau midi — 09h30 UTC (12h30 Madagascar / 11h30 France)
     - cron: "30 9 * * 1-6"
-    # Créneau soir — 17h00 UTC (20h Madagascar / 19h France)
     - cron: "0 17 * * 0,1-6"
   workflow_dispatch: {}
 
 jobs:
   story:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout du repo
-        uses: actions/checkout@v4
-
-      - name: Installer Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Installer les dépendances système (ffmpeg + polices)
+      - name: Dépendances système
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
-
-      - name: Installer les dépendances Python
+      - name: Dépendances Python
         run: pip install "requests>=2.31.0"
-
       - name: Publier la story
         env:
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
-          POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python post_story.py
