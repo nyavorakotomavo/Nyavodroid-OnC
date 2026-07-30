@@ -12,7 +12,7 @@ Secrets requis (GitHub Secrets) :
   - FB_PAGE_ACCESS_TOKEN
   - POLLINATIONS_API_KEY
 
-Dépendances (requirements.txt) :
+Dépendances Python (requirements.txt) :
   requests>=2.31.0
 
 Dépendances système (ubuntu-latest) :
@@ -47,13 +47,19 @@ POLLINATIONS_API_KEY = os.environ["POLLINATIONS_API_KEY"]
 # ──────────────────────────────────────────────
 # Constantes
 # ──────────────────────────────────────────────
-GRAPH_API_VERSION = "v25.0"  # Mis à jour : v21.0 → v25.0 (stable, exp. 07/2028)
+GRAPH_API_VERSION = "v25.0"
 STORY_IMAGE_PATH = "story_image.png"
 STORY_WIDTH, STORY_HEIGHT = 1080, 1920
 
-# Endpoints Pollinations (nouveau base URL unifié)
-POLLINATIONS_TEXT_URL = "https://text.pollinations.ai/"
-POLLINATIONS_IMAGE_URL = "https://image.pollinations.ai/prompt/"
+# ── Endpoints Pollinations (nouveau base URL unifié gen.pollinations.ai) ──
+# ⚠️ Les anciens endpoints text.pollinations.ai et image.pollinations.ai
+#    sont DÉPRÉCIÉS et retournent HTTP 402 pour les utilisateurs authentifiés.
+#    Migration obligatoire vers gen.pollinations.ai
+POLLINATIONS_TEXT_URL = "https://gen.pollinations.ai/text/"
+POLLINATIONS_IMAGE_URL = "https://gen.pollinations.ai/image/"
+
+# Modèle image (requis par le nouvel endpoint — défaut: zimage)
+POLLINATIONS_IMAGE_MODEL = "flux"
 
 # Headers d'authentification Pollinations
 POLLINATIONS_HEADERS = {
@@ -83,8 +89,10 @@ def _requete_avec_retry(
 ) -> requests.Response:
     """
     Effectue une requête HTTP avec retries automatiques et gestion d'erreurs.
+    Retente uniquement sur 429 (rate limit) et 5xx (erreur serveur).
     """
-    derniere_erreur = None
+    derniere_erreur: Exception | None = None
+
     for tentative in range(1, MAX_RETRIES + 1):
         try:
             reponse = requests.request(
@@ -97,17 +105,18 @@ def _requete_avec_retry(
                 timeout=timeout,
                 stream=stream,
             )
-            # Si 429 (rate limit) ou 5xx, on retry
+
+            # Rate limit ou erreur serveur → on retry
             if reponse.status_code == 429 or reponse.status_code >= 500:
                 attente = RETRY_DELAY_SECONDS * tentative
                 print(
                     f"  ⚠️  HTTP {reponse.status_code} — nouvelle tentative "
                     f"dans {attente}s ({tentative}/{MAX_RETRIES})"
                 )
-                time.sleep(attente)
                 derniere_erreur = requests.exceptions.HTTPError(
                     f"HTTP {reponse.status_code}", response=reponse
                 )
+                time.sleep(attente)
                 continue
 
             reponse.raise_for_status()
@@ -132,7 +141,7 @@ def _requete_avec_retry(
             time.sleep(attente)
 
         except requests.exceptions.HTTPError:
-            # Erreur 4xx (sauf 429) : pas de retry, on lève directement
+            # Erreur 4xx (sauf 429 déjà géré) : pas de retry
             raise
 
     # Toutes les tentatives ont échoué
@@ -145,6 +154,7 @@ def _requete_avec_retry(
 def generer_texte_story() -> tuple[str, str]:
     """
     Génère une phrase courte via l'API texte Pollinations.
+    Endpoint : GET https://gen.pollinations.ai/text/{prompt}
     Retourne (pilier, texte).
     """
     pilier = random.choices(
@@ -180,9 +190,10 @@ def generer_texte_story() -> tuple[str, str]:
         code = e.response.status_code if e.response is not None else "N/A"
         corps = ""
         if e.response is not None:
-            corps = e.response.text[:300]
+            corps = e.response.text[:500]
         raise RuntimeError(
-            f"Erreur API texte Pollinations (HTTP {code}) : {corps}"
+            f"Erreur API texte Pollinations (HTTP {code}) : {corps}\n"
+            f"Vérifiez votre clé POLLINATIONS_API_KEY et votre solde Pollen."
         ) from e
 
     except requests.exceptions.RequestException as e:
@@ -196,28 +207,31 @@ def generer_texte_story() -> tuple[str, str]:
 # ──────────────────────────────────────────────
 def generer_url_image_story(pilier: str) -> str:
     """
-    Construit l'URL de génération d'image Pollinations avec authentification.
+    Construit l'URL de génération d'image Pollinations.
+    Endpoint : GET https://gen.pollinations.ai/image/{prompt}
+    Le paramètre 'model' est requis par le nouvel endpoint.
     """
     prompt = f"{PILLARS[pilier]['label']}, {STYLE_IMAGE_SUFFIX}, vertical composition"
     encoded = urllib.parse.quote(prompt)
-    # La clé API est passée en query param pour les endpoints GET image
     return (
         f"{POLLINATIONS_IMAGE_URL}{encoded}"
-        f"?width={STORY_WIDTH}&height={STORY_HEIGHT}"
-        f"&nologo=true&key={POLLINATIONS_API_KEY}"
+        f"?model={POLLINATIONS_IMAGE_MODEL}"
+        f"&width={STORY_WIDTH}&height={STORY_HEIGHT}"
+        f"&nologo=true"
     )
 
 
 def telecharger_image(url: str, chemin: str) -> None:
     """
     Télécharge l'image générée et la sauvegarde localement.
+    Utilise requests (avec header Bearer) au lieu de urllib.request.urlretrieve.
     """
     try:
-        print(f"  🖼️  Téléchargement de l'image...")
+        print("  🖼️  Téléchargement de l'image...")
         reponse = _requete_avec_retry(
             "GET",
             url,
-            headers={"User-Agent": "NyavoChannel/1.0"},
+            headers=POLLINATIONS_HEADERS,
             timeout=120,  # La génération d'image peut être lente
             stream=True,
         )
@@ -226,27 +240,28 @@ def telecharger_image(url: str, chemin: str) -> None:
             for chunk in reponse.iter_content(chunk_size=8192):
                 f.write(chunk)
 
-        # Vérification que le fichier n'est pas vide
+        # Vérification que le fichier n'est pas vide / corrompu
         taille = os.path.getsize(chemin)
         if taille < 1024:
             raise ValueError(
                 f"L'image téléchargée est suspecte ({taille} octets). "
-                f"L'API a peut-être retourné une erreur."
+                f"L'API a peut-être retourné une erreur au lieu d'une image."
             )
 
-        print(f"  ✅ Image sauvegardée : {chemin} ({taille} octets)")
+        print(f"  ✅ Image sauvegardée : {chemin} ({taille:,} octets)")
 
     except requests.exceptions.HTTPError as e:
         code = e.response.status_code if e.response is not None else "N/A"
+        corps = ""
+        if e.response is not None:
+            corps = e.response.text[:300]
         raise RuntimeError(
-            f"Erreur API image Pollinations (HTTP {code}). "
-            f"Vérifiez la clé API et le quota."
+            f"Erreur API image Pollinations (HTTP {code}) : {corps}\n"
+            f"Vérifiez votre clé API et votre solde Pollen."
         ) from e
 
     except requests.exceptions.RequestException as e:
-        raise RuntimeError(
-            f"Impossible de télécharger l'image : {e}"
-        ) from e
+        raise RuntimeError(f"Impossible de télécharger l'image : {e}") from e
 
     except OSError as e:
         raise RuntimeError(
@@ -266,12 +281,12 @@ def incruster_texte(image_in: str, texte: str, image_out: str) -> None:
         "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
         f"text='{texte_ffmpeg}':fontcolor=0x00E5FF:fontsize=58:"
         "x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=0x0D0D0D@0.7:boxborderw=30:"
-        f"line_spacing=14"
+        "line_spacing=14"
     )
 
     try:
-        print(f"  🎨 Incrustation du texte via ffmpeg...")
-        resultat = subprocess.run(
+        print("  🎨 Incrustation du texte via ffmpeg...")
+        subprocess.run(
             [
                 "ffmpeg",
                 "-i", image_in,
@@ -309,7 +324,7 @@ def uploader_photo_non_publiee(image_path: str) -> str:
     )
 
     try:
-        print(f"  📤 Upload de la photo vers Facebook (non publiée)...")
+        print("  📤 Upload de la photo vers Facebook (non publiée)...")
         with open(image_path, "rb") as f:
             files = {"source": (os.path.basename(image_path), f, "image/png")}
             data = {
@@ -339,7 +354,12 @@ def uploader_photo_non_publiee(image_path: str) -> str:
         corps = ""
         if e.response is not None:
             try:
-                corps = e.response.json().get("error", {}).get("message", "")
+                erreur_fb = e.response.json().get("error", {})
+                corps = (
+                    f"[{erreur_fb.get('type', '?')}] "
+                    f"{erreur_fb.get('message', 'Message inconnu')} "
+                    f"(code {erreur_fb.get('code', '?')})"
+                )
             except Exception:
                 corps = e.response.text[:300]
         raise RuntimeError(
@@ -371,7 +391,7 @@ def publier_story(photo_id: str) -> dict:
     }
 
     try:
-        print(f"  🚀 Publication de la story Facebook...")
+        print("  🚀 Publication de la story Facebook...")
         reponse = _requete_avec_retry(
             "POST",
             endpoint,
@@ -386,7 +406,7 @@ def publier_story(photo_id: str) -> dict:
                 f"Réponse Facebook inattendue (pas de 'id') : {resultat}"
             )
 
-        print(f"  ✅ Story publiée avec succès !")
+        print("  ✅ Story publiée avec succès !")
         return resultat
 
     except requests.exceptions.HTTPError as e:
@@ -462,5 +482,8 @@ if __name__ == "__main__":
         )
         sys.exit(1)
     except Exception as e:
-        print(f"\n❌ Erreur inattendue : {type(e).__name__}: {e}", file=sys.stderr)
+        print(
+            f"\n❌ Erreur inattendue : {type(e).__name__}: {e}",
+            file=sys.stderr,
+        )
         sys.exit(1)
