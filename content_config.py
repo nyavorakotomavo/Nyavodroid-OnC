@@ -1,150 +1,193 @@
-# -*- coding: utf-8 -*-
-"""Configuration Nyavo Channel v2 — intègre les specs de performance
-(horaires, formats, structure de légende) issues de l'étude Perplexity.
+#!/usr/bin/env python3
+"""
+Nyavo Channel — Configuration éditoriale.
+Alignée sur la ligne éditoriale officielle :
+  Axe 1 : Secrets du code & mécanismes cachés du web
+  Axe 2 : Découvertes scientifiques & technologies émergentes
+  Axe 3 : Actualité IA, logiciels, gadgets & tendances tech
+  Axe 4 : Coulisses des projets Nyavo (dev, défis, solutions)
+
+Identité visuelle : cyber-minimaliste, sombre, futuriste,
+  noir/anthracite, accents cyan/vert néon, ambiance synthwave.
 """
 
-# ---------------------------------------------------------------------------
-# IDENTITÉ VISUELLE
-# ---------------------------------------------------------------------------
-PALETTE = {
-    "bg": "0x0D0D0D",
-    "accent_cyan": "0x00E5FF",
-    "accent_lime": "0x39FF14",
-    "gray": "0x2B2B2B",
-}
-
-STYLE_IMAGE_SUFFIX = (
-    "dark cyberpunk aesthetic, minimalist, black background, "
-    "neon cyan and lime green accents, high contrast, saturated colors, "
-    "single strong central visual element, tension visuelle, "
-    "no face, partial hand or silhouette allowed, no text, no watermark"
-)
-
-# Specs image : format vertical 4:5, surperforme le carré (données Perplexity)
-IMAGE_WIDTH = 1080
-IMAGE_HEIGHT = 1350
-
-# Specs vidéo : format 9:16 plein écran, 7-10s = zone de rétention max
-VIDEO_WIDTH = 1080
-VIDEO_HEIGHT = 1920
-VIDEO_DURATION_SECONDS = 9
-VIDEO_FPS = 25
-
-# ---------------------------------------------------------------------------
-# RÈGLES DE LÉGENDE (structure hook / contexte / question / hashtags)
-# ---------------------------------------------------------------------------
-MAX_HOOK_CHARS = 80          # posts <80 caractères = engagement le plus haut
-MAX_OVERLAY_WORDS = 8        # règle image : 1 seul message court sur le visuel
-HASHTAG_COUNT = 3            # 2-3 hashtags max sur Facebook (pas plus)
-
-HOOK_FORMULAS = [
-    "statistique surprenante (ex: '97% des devs ignorent ça')",
-    "teasing de révélation (ex: 'Ce que X ne montre JAMAIS')",
-    "contradiction d'une croyance répandue",
-]
-
-# ---------------------------------------------------------------------------
-# 4 PILIERS DE CONTENU
-# ---------------------------------------------------------------------------
+# ──────────────────────────────────────────────
+# Les 4 axes éditoriaux officiels
+# ──────────────────────────────────────────────
 PILLARS = {
-    "deep_code": {
-        "label": "Deep Code & Secrets du Web",
-        "hook_style": "révélation, 'voici ce que X ne veut pas que tu saches'",
-        "topics": [
-            "comment l'algorithme de recommandation de TikTok choisit vraiment ce que tu vois",
-            "la technique cachée derrière l'auto-complétion de Google",
-            "pourquoi certains sites chargent plus vite que d'autres (le secret du lazy loading)",
-            "comment fonctionne le chiffrement de bout en bout de WhatsApp",
-            "le tracking invisible que font 90% des sites sans te le dire",
-            "comment une app peut deviner ta localisation sans GPS",
-            "la logique cachée derrière le feed infini d'Instagram",
-            "comment les mots de passe sont vraiment stockés (hash vs clair)",
-            "le fonctionnement réel d'un VPN, au-delà du marketing",
-            "comment un site sait que t'as déjà visité même en navigation privée",
+    "secrets_code": {
+        "label": "Secrets du Code & Mécanismes Cachés",
+        "description": (
+            "Algorithmes, reverse engineering, astuces méconnues du web, "
+            "fonctionnement des grandes plateformes, protocoles, "
+            "architecture logicielle, coulisses techniques."
+        ),
+        "mots_cles": [
+            "algorithme", "reverse engineering", "protocole", "API",
+            "serveur", "navigateur", "open source", "framework",
+            "base de données", "compilateur", "Linux", "Python",
         ],
     },
-    "dark_science": {
-        "label": "Dark Science & Physique de Pointe",
-        "hook_style": "fascination, 'ça va te faire douter de la réalité'",
-        "topics": [
-            "pourquoi le vide spatial n'est jamais totalement vide",
-            "la théorie qui dit que le temps ralentit près d'un trou noir",
-            "comment l'ordinateur quantique casse la logique classique",
-            "pourquoi la lumière n'a pas de masse mais peut être 'piégée'",
-            "l'expérience qui prouve qu'observer change la réalité (physique quantique)",
-            "pourquoi l'univers pourrait être une simulation selon certains physiciens",
-            "comment les matériaux intelligents changent de forme tout seuls",
-            "la théorie des cordes expliquée en 30 secondes",
-            "pourquoi le zéro absolu n'existe pas vraiment dans notre univers",
-            "comment un satellite doit corriger sa vitesse à cause d'Einstein",
+    "science_tech": {
+        "label": "Découvertes Scientifiques & Technologies Émergentes",
+        "description": (
+            "Physique moderne, laboratoires de recherche, innovations "
+            "de rupture, technologies quantiques, biotechnologies, "
+            "énergie, espace, matériaux du futur."
+        ),
+        "mots_cles": [
+            "quantique", "physique", "laboratoire", "innovation",
+            "énergie", "espace", "biotechnologie", "matériau",
+            "recherche", "découverte", "futur", "science",
         ],
     },
-    "fast_tech": {
-        "label": "Fast Tech & Nouveautés IA",
-        "hook_style": "urgence/exclusivité, 'avant que tout le monde le sache'",
-        "topics": [
-            "un outil IA gratuit que personne n'utilise encore",
-            "la fonctionnalité cachée de ton smartphone que tu n'as jamais activée",
-            "comment tester une IA avant sa sortie officielle",
-            "l'astuce pour utiliser une IA payante gratuitement (usage légal)",
-            "le gadget tech qui va changer ta façon de coder",
-            "comment une IA peut générer une app entière en quelques minutes",
-            "la tendance tech que les devs sous-estiment en ce moment",
-            "un raccourci clavier ou terminal qui fait gagner un temps fou",
+    "actu_ia_tech": {
+        "label": "Actualité IA, Logiciels & Tendances Tech",
+        "description": (
+            "Intelligences artificielles, applications, logiciels, "
+            "gadgets, tendances technologiques, outils numériques, "
+            "mises à jour, sorties, comparatifs."
+        ),
+        "mots_cles": [
+            "IA", "intelligence artificielle", "LLM", "application",
+            "logiciel", "gadget", "startup", "outil", "mise à jour",
+            "tendance", "tech", "numérique",
         ],
     },
-    "devlog": {
-        "label": "DevLog & Projets (le pont vers tes ventes)",
-        "hook_style": "authenticité, coulisses, 'voici où j'en suis vraiment'",
-        "topics": [
-            "le bug le plus tordu que j'ai résolu cette semaine sur mon app",
-            "pourquoi j'ai choisi Kotlin/Compose plutôt qu'un autre framework",
-            "une fonctionnalité inédite que je viens d'ajouter à mon app",
-            "comment je développe une app Android entièrement depuis mon téléphone",
-            "le before/after d'une interface que j'ai refaite cette semaine",
-            "ce que j'ai appris en cassant volontairement mon build",
-            "un aperçu exclusif d'une feature pas encore sortie",
+    "coulisses_nyavo": {
+        "label": "Coulisses des Projets Nyavo",
+        "description": (
+            "Développement des applications créées par Nyavo, "
+            "défis techniques rencontrés, solutions mises en œuvre, "
+            "évolution des projets, architecture, choix techniques, "
+            "lancement, behind the scenes."
+        ),
+        "mots_cles": [
+            "Nyavo", "développement", "projet", "application",
+            "défi technique", "solution", "architecture", "lancement",
+            "backend", "frontend", "déploiement", "code",
         ],
     },
 }
 
 PILLAR_KEYS = list(PILLARS.keys())
 
+# Poids de sélection (somme libre)
 PILLAR_WEIGHTS = {
-    "deep_code": 3,
-    "dark_science": 2,
-    "fast_tech": 3,
-    "devlog": 2,
+    "secrets_code": 30,
+    "science_tech": 25,
+    "actu_ia_tech": 30,
+    "coulisses_nyavo": 15,
 }
 
-HASHTAGS = {
-    "deep_code": ["#DeepCode", "#CodeSecrets", "#TechSecrets"],
-    "dark_science": ["#DarkScience", "#Physique", "#ScienceInsolite"],
-    "fast_tech": ["#FastTech", "#IA", "#TechSecrets"],
-    "devlog": ["#DevLog", "#BuildInPublic", "#TechSecrets"],
+# ──────────────────────────────────────────────
+# Banque de sujets par axe (anti-répétition)
+# ──────────────────────────────────────────────
+SUJETS_PAR_PILIER = {
+    "secrets_code": [
+        "Comment fonctionne réellement le DNS",
+        "Les secrets du protocole HTTP/3",
+        "Pourquoi Python est lent mais domine le monde",
+        "Le fonctionnement caché des WebSockets",
+        "Comment les navigateurs rendent une page en 100ms",
+        "Les coulisses du système Git",
+        "Comment les CDN accélèrent Internet",
+        "SQL vs NoSQL : le vrai duel",
+        "Le fonctionnement des conteneurs Docker",
+        "Les secrets du chiffrement HTTPS",
+        "Comment fonctionne un compilateur",
+        "Les astuces cachées de Linux",
+        "Le reverse engineering expliqué simplement",
+        "Comment les API REST communiquent",
+        "Les mécanismes du cache navigateur",
+    ],
+    "science_tech": [
+        "L'ordinateur quantique expliqué simplement",
+        "La fusion nucléaire : où en est-on ?",
+        "Les matériaux qui changeront le futur",
+        "La biotechnologie et l'ADN synthétique",
+        "Les télescopes de nouvelle génération",
+        "L'énergie solaire du futur",
+        "Les interfaces cerveau-machine",
+        "La physique des trous noirs",
+        "Les robots mous de la recherche",
+        "L'impression 3D d'organes",
+        "Les nanotechnologies médicales",
+        "La supraconductivité à température ambiante",
+        "Les satellites de nouvelle génération",
+        "L'hydrogène vert comme énergie du futur",
+        "Les cristaux temporels en physique",
+    ],
+    "actu_ia_tech": [
+        "Les dernières avancées des LLM",
+        "L'IA générative dans le cinéma",
+        "Les nouveaux outils de coding assisté par IA",
+        "Les lunettes AR de nouvelle génération",
+        "L'IA dans la médecine diagnostique",
+        "Les agents IA autonomes",
+        "Les modèles open source vs propriétaires",
+        "L'IA et la cybersécurité",
+        "Les gadgets tech les plus innovants",
+        "Les tendances dev à suivre",
+        "L'IA dans la musique et l'art",
+        "Les nouveaux frameworks JavaScript",
+        "L'edge computing et l'IA locale",
+        "Les robots humanoïdes de 2026",
+        "L'IA et la traduction en temps réel",
+    ],
+    "coulisses_nyavo": [
+        "Comment j'ai automatisé mes publications",
+        "Le défi du déploiement sur GitHub Actions",
+        "Pourquoi j'ai choisi Python pour mes outils",
+        "Les bugs les plus difficiles à résoudre",
+        "L'architecture de mon bot de publication",
+        "Comment je gère les API externes",
+        "Le passage de l'idée au prototype",
+        "Les erreurs de débutant à éviter",
+        "Comment j'optimise mes scripts",
+        "Le choix des bases de données",
+        "La gestion des erreurs en production",
+        "Comment je teste mes applications",
+        "Le déploiement sur le cloud",
+        "La sécurité de mes applications",
+        "L'évolution de mon stack technique",
+    ],
 }
 
-CTA_QUESTIONS = [
-    "Tu savais ou pas ? Dis-le en commentaire.",
-    "Team surpris ou team je savais déjà ? Commente.",
-    "Partage à un dev qui doit voir ça.",
-    "Ça change quoi pour toi ? Réagis en commentaire.",
-]
-
-# ---------------------------------------------------------------------------
-# RATIO FORMAT (feed uniquement — les stories sont gérées séparément)
-# ---------------------------------------------------------------------------
-FORMAT_WEIGHTS = {"photo": 55, "video": 45}
-
-HISTORY_WINDOW = 12
-
-# ---------------------------------------------------------------------------
-# CONTENU STORIES (courts, factuels, sans légende longue)
-# ---------------------------------------------------------------------------
+# ──────────────────────────────────────────────
+# Styles de prompts (formats de contenu)
+# ──────────────────────────────────────────────
 STORY_PROMPTS = [
-    "un chiffre choc et vérifiable sur l'IA ou la tech, en une phrase",
-    "une astuce dev en une phrase actionnable",
-    "une question ouverte qui lance le débat sur une tendance tech du moment",
-    "un fait scientifique surprenant en une phrase",
-    "un teaser d'une phrase sur ce que tu développes en ce moment",
+    "un fait surprenant et méconnu",
+    "une question qui pique la curiosité",
+    "un chiffre impressionnant",
+    "une anecdote technique méconnue",
+    "un mythe à débunker",
+    "une prédiction audacieuse mais crédible",
+    "un conseil pratique de développeur",
+    "une comparaison inattendue",
+    "un secret bien gardé",
+    "une révélation contre-intuitive",
 ]
+
+# ──────────────────────────────────────────────
+# Ton éditorial
+# ──────────────────────────────────────────────
+TON_EDITORIAL = (
+    "Vulgarisation captivante et accessible. Ton dynamique, immersif, "
+    "légèrement mystérieux. Comme si tu révélais un secret au lecteur. "
+    "Phrases courtes et percutantes. Pas de jargon inutile, mais "
+    "toujours un terme technique précis pour crédibiliser. "
+    "Tutoiement implicite. Pas de formules creuses."
+)
+
+# ──────────────────────────────────────────────
+# Identité visuelle (style image)
+# ──────────────────────────────────────────────
+STYLE_IMAGE_SUFFIX = (
+    "cyber-minimalist, dark futuristic aesthetic, black and anthracite "
+    "background, cyan and neon green accents, glowing digital interfaces, "
+    "synthwave atmosphere, sleek modern design, code fragments floating, "
+    "holographic elements, high contrast, cinematic lighting, 4k quality, "
+    "vertical composition"
+)
