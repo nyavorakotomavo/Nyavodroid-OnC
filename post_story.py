@@ -5,7 +5,8 @@ Nyavo Channel — publication STORY (image courte, texte minimal).
 interactifs (sondage, question, quiz) par automatisation. Ce script
 publie une image avec le texte écrit directement dessus.
 
-Secrets requis : FB_PAGE_ID, FB_PAGE_ACCESS_TOKEN, GEMINI_API_KEY
+Projet Gemini : nyavo-story (clé dédiée GEMINI_API_KEY_STORY)
+Secrets requis : FB_PAGE_ID, FB_PAGE_ACCESS_TOKEN, GEMINI_API_KEY_STORY
 Dépendances : requests>=2.31.0 | ffmpeg + fonts-dejavu-core
 """
 
@@ -24,6 +25,8 @@ from content_config import (
     PILLARS,
     STORY_PROMPTS,
     STYLE_IMAGE_SUFFIX,
+    SUJETS_PAR_PILIER,
+    TON_EDITORIAL,
 )
 
 # ──────────────────────────────────────────────
@@ -31,7 +34,7 @@ from content_config import (
 # ──────────────────────────────────────────────
 FB_PAGE_ID = os.environ["FB_PAGE_ID"]
 FB_PAGE_ACCESS_TOKEN = os.environ["FB_PAGE_ACCESS_TOKEN"]
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+GEMINI_API_KEY = os.environ["GEMINI_API_KEY_STORY"]  # Projet A dédié
 
 # ──────────────────────────────────────────────
 # Constantes
@@ -133,23 +136,37 @@ def _erreur_facebook(e: requests.exceptions.HTTPError, contexte: str) -> Runtime
 
 
 # ──────────────────────────────────────────────
-# Génération du texte (Gemini)
+# Génération du texte (Gemini — Projet A)
 # ──────────────────────────────────────────────
-def generer_texte_story() -> tuple[str, str]:
-    """Génère une phrase courte via Gemini. Retourne (pilier, texte)."""
+def generer_texte_story() -> tuple[str, str, str]:
+    """
+    Génère une phrase courte via Gemini, alignée sur la niche Nyavo.
+    Retourne (pilier, sujet, texte).
+    """
     pilier = random.choices(
         PILLAR_KEYS, weights=[PILLAR_WEIGHTS[k] for k in PILLAR_KEYS], k=1
     )[0]
     style_prompt = random.choice(STORY_PROMPTS)
+    sujet = random.choice(SUJETS_PAR_PILIER[pilier])
 
     prompt = (
-        f"Écris {style_prompt}, en français, une seule phrase courte "
-        f"(moins de 15 mots), sans guillemets, pour la catégorie "
-        f"'{PILLARS[pilier]['label']}'."
+        f"Tu es Nyavo Channel, une chaîne tech qui révèle les mécanismes "
+        f"cachés du monde numérique.\n\n"
+        f"Axe éditorial : {PILLARS[pilier]['label']}\n"
+        f"Sujet imposé : {sujet}\n"
+        f"Format : {style_prompt}\n\n"
+        f"Consignes :\n"
+        f"- Écris UNE seule phrase en français (moins de 15 mots)\n"
+        f"- Ton : {TON_EDITORIAL}\n"
+        f"- Inclus au moins un terme technique précis\n"
+        f"- Pas de guillemets, pas de titre, juste la phrase\n"
+        f"- Interdit : généralités, banalités, hors-sujet\n"
     )
 
     try:
-        print(f"  📝 Texte via Gemini (pilier : {PILLARS[pilier]['label']})...")
+        print(f"  📝 Texte via Gemini [story]...")
+        print(f"     Axe   : {PILLARS[pilier]['label']}")
+        print(f"     Sujet : {sujet}")
         reponse = _requete_avec_retry(
             "POST",
             f"{GEMINI_TEXT_URL}?key={GEMINI_API_KEY}",
@@ -172,26 +189,31 @@ def generer_texte_story() -> tuple[str, str]:
             raise ValueError("Réponse texte vide.")
 
         print(f"  ✅ Texte : « {texte} »")
-        return pilier, texte
+        return pilier, sujet, texte
 
     except requests.exceptions.HTTPError as e:
         code = e.response.status_code if e.response is not None else "N/A"
         corps = e.response.text[:400] if e.response is not None else ""
-        raise RuntimeError(f"Gemini texte (HTTP {code}) : {corps}") from e
+        raise RuntimeError(f"Gemini texte [story] (HTTP {code}) : {corps}") from e
 
     except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Gemini texte injoignable : {e}") from e
+        raise RuntimeError(f"Gemini texte [story] injoignable : {e}") from e
 
 
 # ──────────────────────────────────────────────
-# Génération de l'image (Gemini)
+# Génération de l'image (Gemini — Projet A)
 # ──────────────────────────────────────────────
-def generer_image_story(pilier: str, chemin: str) -> None:
-    """Génère une image verticale 9:16 via Gemini et sauvegarde en PNG."""
-    prompt = f"{PILLARS[pilier]['label']}, {STYLE_IMAGE_SUFFIX}, vertical composition"
+def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
+    """Génère une image verticale 9:16 liée au texte via Gemini."""
+    prompt = (
+        f"Illustration verticale 9:16 pour ce texte : « {texte} »\n"
+        f"Axe : {PILLARS[pilier]['label']}\n"
+        f"Style : {STYLE_IMAGE_SUFFIX}\n"
+        f"L'image doit refléter visuellement le contenu du texte."
+    )
 
     try:
-        print("  🖼️  Image via Gemini...")
+        print("  🖼️  Image via Gemini [story]...")
         reponse = _requete_avec_retry(
             "POST",
             f"{GEMINI_IMAGE_URL}?key={GEMINI_API_KEY}",
@@ -221,13 +243,13 @@ def generer_image_story(pilier: str, chemin: str) -> None:
     except requests.exceptions.HTTPError as e:
         code = e.response.status_code if e.response is not None else "N/A"
         corps = e.response.text[:400] if e.response is not None else ""
-        raise RuntimeError(f"Gemini image (HTTP {code}) : {corps}") from e
+        raise RuntimeError(f"Gemini image [story] (HTTP {code}) : {corps}") from e
 
     except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Gemini image injoignable : {e}") from e
+        raise RuntimeError(f"Gemini image [story] injoignable : {e}") from e
 
     except (KeyError, IndexError) as e:
-        raise RuntimeError(f"Réponse Gemini image invalide : {e}") from e
+        raise RuntimeError(f"Réponse Gemini image [story] invalide : {e}") from e
 
 
 # ──────────────────────────────────────────────
@@ -324,14 +346,15 @@ def publier_story(photo_id: str) -> dict:
 # ──────────────────────────────────────────────
 def main() -> None:
     print("=" * 50)
-    print("🎬 Nyavo Channel — Story")
+    print("🎬 Nyavo Channel — Story [Projet Gemini A]")
     print("=" * 50)
 
-    pilier, texte = generer_texte_story()
-    print(f"\n📌 Pilier : {PILLARS[pilier]['label']}")
+    pilier, sujet, texte = generer_texte_story()
+    print(f"\n📌 Axe    : {PILLARS[pilier]['label']}")
+    print(f"📌 Sujet  : {sujet}")
     print(f"📌 Texte  : {texte}\n")
 
-    generer_image_story(pilier, "story_raw.png")
+    generer_image_story(pilier, texte, "story_raw.png")
     incruster_texte("story_raw.png", texte, STORY_IMAGE_PATH)
 
     photo_id = uploader_photo_non_publiee(STORY_IMAGE_PATH)
