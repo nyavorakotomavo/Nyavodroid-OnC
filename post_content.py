@@ -7,12 +7,8 @@ Nyavo Channel — publication multi-formats.
 
 La Story est gérée séparément par post_story.py (Projet Gemini A).
 
-Rotation selon l'heure UTC :
-  07h → texte_seul | 09h → image_texte | 17h → reel
-  workflow_dispatch → aléatoire pondéré
-
 Texte : Mistral → fallback Gemini [content]
-Images : Gemini [content] — modèle gemini-3.1-flash-image-preview
+Images : Gemini Interactions API [content] — gemini-3.1-flash-image
 Vidéo : ffmpeg (assemblage local)
 
 Projet Gemini : nyavo-content (clé dédiée GEMINI_API_KEY_CONTENT)
@@ -59,16 +55,16 @@ DUREE_PAR_IMAGE = 2.5
 AUDIO_PATH = "background_music.mp3"
 
 MISTRAL_TEXT_URL = "https://api.mistral.ai/v1/chat/completions"
+
+# ✅ Texte : API generateContent (inchangé)
 GEMINI_TEXT_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
     "models/gemini-2.5-flash:generateContent"
 )
-# ✅ Modèle image corrigé : gemini-3.1-flash-image-preview
-#    (supporte generationConfig.imageConfig.aspectRatio)
-GEMINI_IMAGE_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-3.1-flash-image-preview:generateContent"
-)
+
+# ✅ Image : NOUVELLE API Interactions
+GEMINI_IMAGE_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
+GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image"
 
 MAX_RETRIES = 5
 RETRY_DELAY = 20
@@ -154,6 +150,44 @@ def _erreur_facebook(e: requests.exceptions.HTTPError, contexte: str) -> Runtime
     return RuntimeError(f"Facebook Graph ({contexte}, HTTP {code}) : {corps}")
 
 
+def _extraire_image_base64(resultat: dict) -> str:
+    """
+    Extrait les données image base64 d'une réponse API Interactions.
+    Cherche dans output_image, output[], et candidates[] pour compatibilité.
+    """
+    # Format API Interactions : output_image
+    if "output_image" in resultat:
+        oi = resultat["output_image"]
+        if isinstance(oi, dict) and "data" in oi:
+            return oi["data"]
+        if isinstance(oi, str):
+            return oi
+
+    # Format API Interactions : output[]
+    if "output" in resultat:
+        for item in resultat["output"]:
+            if isinstance(item, dict):
+                if item.get("type") == "image" and "data" in item:
+                    return item["data"]
+                if "inlineData" in item:
+                    return item["inlineData"]["data"]
+                if "inline_data" in item:
+                    return item["inline_data"]["data"]
+
+    # Format legacy generateContent : candidates[]
+    if "candidates" in resultat:
+        for part in resultat["candidates"][0]["content"]["parts"]:
+            if "inlineData" in part:
+                return part["inlineData"]["data"]
+            if "inline_data" in part:
+                return part["inline_data"]["data"]
+
+    raise ValueError(
+        f"Impossible d'extraire l'image de la réponse. "
+        f"Clés disponibles : {list(resultat.keys())}"
+    )
+
+
 # ══════════════════════════════════════════════
 #  CHOIX DU TYPE DE CONTENU
 # ══════════════════════════════════════════════
@@ -210,7 +244,7 @@ def _texte_mistral(prompt: str) -> str:
 
 
 def _texte_gemini(prompt: str) -> str:
-    """Appel Gemini API [content]."""
+    """Appel Gemini API [content] — generateContent (texte uniquement)."""
     reponse = _requete_avec_retry(
         "POST",
         f"{GEMINI_TEXT_URL}?key={GEMINI_API_KEY}",
@@ -241,35 +275,35 @@ def generer_texte(prompt: str, contexte: str = "") -> str:
 
 
 # ══════════════════════════════════════════════
-#  GÉNÉRATION IMAGE (Gemini B)
+#  GÉNÉRATION IMAGE (Gemini Interactions API)
 # ══════════════════════════════════════════════
 def generer_image(prompt: str, chemin: str) -> None:
-    """Génère une image 9:16 via Gemini [content] et sauvegarde en PNG."""
+    """
+    Génère une image 9:16 via Gemini Interactions API [content].
+    Endpoint : POST /v1beta/interactions
+    Modèle : gemini-3.1-flash-image
+    """
     reponse = _requete_avec_retry(
         "POST",
-        f"{GEMINI_IMAGE_URL}?key={GEMINI_API_KEY}",
-        headers={"Content-Type": "application/json"},
+        GEMINI_IMAGE_URL,
+        headers={
+            "x-goog-api-key": GEMINI_API_KEY,
+            "Content-Type": "application/json",
+        },
         json_data={
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "responseModalities": ["IMAGE"],
-                "imageConfig": {"aspectRatio": "9:16"},
+            "model": GEMINI_IMAGE_MODEL,
+            "input": [{"type": "text", "text": prompt}],
+            "response_format": {
+                "type": "image",
+                "aspect_ratio": "9:16",
+                "image_size": "1K",
             },
         },
         timeout=120,
     )
 
     resultat = reponse.json()
-
-    # Extraire l'image base64 de la réponse
-    image_b64 = None
-    for part in resultat["candidates"][0]["content"]["parts"]:
-        if "inlineData" in part:
-            image_b64 = part["inlineData"]["data"]
-            break
-
-    if not image_b64:
-        raise ValueError("Pas de données image dans la réponse Gemini.")
+    image_b64 = _extraire_image_base64(resultat)
 
     with open(chemin, "wb") as f:
         f.write(base64.b64decode(image_b64))
