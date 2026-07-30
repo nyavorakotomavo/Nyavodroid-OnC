@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 """
 Nyavo Channel — publication STORY (image courte, texte minimal).
-⚠️ LIMITE API : l'API Graph ne permet PAS d'ajouter des stickers
-interactifs (sondage, question, quiz) par automatisation.
-
 Projet Gemini : nyavo-story (clé dédiée GEMINI_API_KEY_STORY)
 Secrets requis : FB_PAGE_ID, FB_PAGE_ACCESS_TOKEN, GEMINI_API_KEY_STORY
 Dépendances : requests>=2.31.0 | ffmpeg + fonts-dejavu-core
@@ -12,6 +9,7 @@ Dépendances : requests>=2.31.0 | ffmpeg + fonts-dejavu-core
 import base64
 import os
 import random
+import re
 import subprocess
 import sys
 import time
@@ -42,19 +40,37 @@ GRAPH_API_VERSION = "v25.0"
 STORY_IMAGE_PATH = "story_image.png"
 STORY_WIDTH, STORY_HEIGHT = 1080, 1920
 
-# ✅ Texte : API generateContent (inchangé)
 GEMINI_TEXT_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
     "models/gemini-2.5-flash:generateContent"
 )
-
-# ✅ Image : NOUVELLE API Interactions (remplace generateContent)
 GEMINI_IMAGE_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image"
 
 MAX_RETRIES = 4
 RETRY_DELAY = 15
 TIMEOUT = 60
+
+
+# ──────────────────────────────────────────────
+# Nettoyage des textes
+# ──────────────────────────────────────────────
+def _nettoyer_texte(texte: str) -> str:
+    """
+    Supprime les caractères Unicode invisibles (LRM, RLM, BOM, zero-width)
+    et le formatage Markdown (**gras**, *italique*) qui font planter les HTTP headers.
+    """
+    # Caractères invisibles Unicode
+    texte = re.sub(
+        r'[\u200e\u200f\u200b\u200c\u200d\ufeff\u00ad\u2060\u180e\u202a-\u202e\u2066-\u2069]',
+        '',
+        texte,
+    )
+    # Markdown gras/italique
+    texte = texte.replace('**', '').replace('*', '')
+    # Caractères non-imprimables (sauf newline/tab)
+    texte = ''.join(c for c in texte if c.isprintable() or c in '\n\t')
+    return texte.strip()
 
 
 # ──────────────────────────────────────────────
@@ -136,11 +152,7 @@ def _erreur_facebook(e: requests.exceptions.HTTPError, contexte: str) -> Runtime
 
 
 def _extraire_image_base64(resultat: dict) -> str:
-    """
-    Extrait les données image base64 d'une réponse API Interactions.
-    Cherche dans output_image, output[], et candidates[] pour compatibilité.
-    """
-    # Format API Interactions : output_image
+    """Extrait les données image base64 d'une réponse API Interactions."""
     if "output_image" in resultat:
         oi = resultat["output_image"]
         if isinstance(oi, dict) and "data" in oi:
@@ -148,7 +160,6 @@ def _extraire_image_base64(resultat: dict) -> str:
         if isinstance(oi, str):
             return oi
 
-    # Format API Interactions : output[]
     if "output" in resultat:
         for item in resultat["output"]:
             if isinstance(item, dict):
@@ -159,7 +170,6 @@ def _extraire_image_base64(resultat: dict) -> str:
                 if "inline_data" in item:
                     return item["inline_data"]["data"]
 
-    # Format legacy generateContent : candidates[]
     if "candidates" in resultat:
         for part in resultat["candidates"][0]["content"]["parts"]:
             if "inlineData" in part:
@@ -168,8 +178,7 @@ def _extraire_image_base64(resultat: dict) -> str:
                 return part["inline_data"]["data"]
 
     raise ValueError(
-        f"Impossible d'extraire l'image de la réponse. "
-        f"Clés disponibles : {list(resultat.keys())}"
+        f"Impossible d'extraire l'image. Clés : {list(resultat.keys())}"
     )
 
 
@@ -177,10 +186,7 @@ def _extraire_image_base64(resultat: dict) -> str:
 # Génération du texte (Gemini — Projet A)
 # ──────────────────────────────────────────────
 def generer_texte_story() -> tuple[str, str, str]:
-    """
-    Génère une phrase courte via Gemini, alignée sur la niche Nyavo.
-    Retourne (pilier, sujet, texte).
-    """
+    """Retourne (pilier, sujet, texte)."""
     pilier = random.choices(
         PILLAR_KEYS, weights=[PILLAR_WEIGHTS[k] for k in PILLAR_KEYS], k=1
     )[0]
@@ -197,7 +203,7 @@ def generer_texte_story() -> tuple[str, str, str]:
         f"- Écris UNE seule phrase en français (moins de 15 mots)\n"
         f"- Ton : {TON_EDITORIAL}\n"
         f"- Inclus au moins un terme technique précis\n"
-        f"- Pas de guillemets, pas de titre, juste la phrase\n"
+        f"- Pas de guillemets, pas de titre, pas de Markdown, juste la phrase\n"
         f"- Interdit : généralités, banalités, hors-sujet\n"
     )
 
@@ -222,6 +228,7 @@ def generer_texte_story() -> tuple[str, str, str]:
             .strip('"')
             .split("\n")[0]
         )
+        texte = _nettoyer_texte(texte)
 
         if not texte:
             raise ValueError("Réponse texte vide.")
@@ -239,20 +246,19 @@ def generer_texte_story() -> tuple[str, str, str]:
 
 
 # ──────────────────────────────────────────────
-# Génération de l'image (Gemini — Projet A)
-# ✅ NOUVELLE API Interactions
+# Génération de l'image (Gemini Interactions API)
 # ──────────────────────────────────────────────
 def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
-    """Génère une image verticale 9:16 liée au texte via Gemini Interactions API."""
-    prompt = (
-        f"Illustration verticale 9:16 pour ce texte : « {texte} »\n"
+    """Génère une image verticale 9:16 liée au texte."""
+    prompt = _nettoyer_texte(
+        f"Illustration verticale 9:16 pour ce texte : {texte}\n"
         f"Axe : {PILLARS[pilier]['label']}\n"
         f"Style : {STYLE_IMAGE_SUFFIX}\n"
         f"L'image doit refléter visuellement le contenu du texte."
     )
 
     try:
-        print("  🖼️  Image via Gemini Interactions API [story]...")
+        print("  🖼️  Image via Gemini [story]...")
         reponse = _requete_avec_retry(
             "POST",
             GEMINI_IMAGE_URL,
@@ -300,7 +306,7 @@ def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
 # Incrustation du texte (ffmpeg)
 # ──────────────────────────────────────────────
 def incruster_texte(image_in: str, texte: str, image_out: str) -> None:
-    """Superpose le texte (façon sticker) sur l'image via ffmpeg."""
+    """Superpose le texte sur l'image via ffmpeg."""
     texte_ffmpeg = texte.replace("'", "\\'").replace(":", "\\:").replace("%", "%%")
     filtre = (
         f"scale={STORY_WIDTH}:{STORY_HEIGHT}:force_original_aspect_ratio=increase,"
