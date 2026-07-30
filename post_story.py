@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
 Nyavo Channel — publication STORY (image courte, texte minimal).
-⚠️ LIMITE API IMPORTANTE : l'API Graph ne permet PAS d'ajouter des
-stickers interactifs (sondage, question, quiz) par automatisation — ces
-éléments n'existent que dans l'app Facebook manuelle. Ce script publie
-donc une image avec le fait/chiffre/question écrit directement dessus,
-ce qui reproduit l'esprit de l'interactivité sans le sticker natif.
+⚠️ LIMITE API : l'API Graph ne permet PAS d'ajouter des stickers
+interactifs (sondage, question, quiz) par automatisation. Ce script
+publie une image avec le texte écrit directement dessus.
 
 Secrets requis : FB_PAGE_ID, FB_PAGE_ACCESS_TOKEN, GEMINI_API_KEY
+Dépendances : requests>=2.31.0 | ffmpeg + fonts-dejavu-core
 """
+
 import base64
 import os
 import random
@@ -67,7 +67,7 @@ def _requete_avec_retry(
     files: dict | None = None,
     timeout: int = TIMEOUT,
 ) -> requests.Response:
-    """Requête HTTP avec retries (429 / 5xx / timeout)."""
+    """Requête HTTP avec retries sur 429 / 5xx / timeout / connexion."""
     derniere_erreur: Exception | None = None
 
     for tentative in range(1, MAX_RETRIES + 1):
@@ -115,6 +115,23 @@ def _requete_avec_retry(
     raise derniere_erreur  # type: ignore[misc]
 
 
+def _erreur_facebook(e: requests.exceptions.HTTPError, contexte: str) -> RuntimeError:
+    """Extrait un message clair d'une erreur Facebook Graph."""
+    corps, code = "", "N/A"
+    if e.response is not None:
+        code = e.response.status_code
+        try:
+            err = e.response.json().get("error", {})
+            corps = (
+                f"[{err.get('type', '?')}] "
+                f"{err.get('message', '?')} "
+                f"(code {err.get('code', '?')})"
+            )
+        except Exception:
+            corps = e.response.text[:400]
+    return RuntimeError(f"Facebook Graph ({contexte}, HTTP {code}) : {corps}")
+
+
 # ──────────────────────────────────────────────
 # Génération du texte (Gemini)
 # ──────────────────────────────────────────────
@@ -132,7 +149,7 @@ def generer_texte_story() -> tuple[str, str]:
     )
 
     try:
-        print(f"  📝 Appel API texte Gemini (pilier : {PILLARS[pilier]['label']})...")
+        print(f"  📝 Texte via Gemini (pilier : {PILLARS[pilier]['label']})...")
         reponse = _requete_avec_retry(
             "POST",
             f"{GEMINI_TEXT_URL}?key={GEMINI_API_KEY}",
@@ -154,29 +171,27 @@ def generer_texte_story() -> tuple[str, str]:
         if not texte:
             raise ValueError("Réponse texte vide.")
 
-        print(f"  ✅ Texte généré : « {texte} »")
+        print(f"  ✅ Texte : « {texte} »")
         return pilier, texte
 
     except requests.exceptions.HTTPError as e:
         code = e.response.status_code if e.response is not None else "N/A"
         corps = e.response.text[:400] if e.response is not None else ""
-        raise RuntimeError(
-            f"Erreur API texte Gemini (HTTP {code}) : {corps}"
-        ) from e
+        raise RuntimeError(f"Gemini texte (HTTP {code}) : {corps}") from e
 
     except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"API texte Gemini injoignable : {e}") from e
+        raise RuntimeError(f"Gemini texte injoignable : {e}") from e
 
 
 # ──────────────────────────────────────────────
 # Génération de l'image (Gemini)
 # ──────────────────────────────────────────────
 def generer_image_story(pilier: str, chemin: str) -> None:
-    """Génère une image verticale via Gemini et la sauvegarde en PNG."""
+    """Génère une image verticale 9:16 via Gemini et sauvegarde en PNG."""
     prompt = f"{PILLARS[pilier]['label']}, {STYLE_IMAGE_SUFFIX}, vertical composition"
 
     try:
-        print("  🖼️  Génération de l'image via Gemini...")
+        print("  🖼️  Image via Gemini...")
         reponse = _requete_avec_retry(
             "POST",
             f"{GEMINI_IMAGE_URL}?key={GEMINI_API_KEY}",
@@ -201,22 +216,18 @@ def generer_image_story(pilier: str, chemin: str) -> None:
         if taille < 1024:
             raise ValueError(f"Image suspecte ({taille} octets).")
 
-        print(f"  ✅ Image sauvegardée : {chemin} ({taille:,} octets)")
+        print(f"  ✅ Image : {chemin} ({taille:,} octets)")
 
     except requests.exceptions.HTTPError as e:
         code = e.response.status_code if e.response is not None else "N/A"
         corps = e.response.text[:400] if e.response is not None else ""
-        raise RuntimeError(
-            f"Erreur API image Gemini (HTTP {code}) : {corps}"
-        ) from e
+        raise RuntimeError(f"Gemini image (HTTP {code}) : {corps}") from e
 
     except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"API image Gemini injoignable : {e}") from e
+        raise RuntimeError(f"Gemini image injoignable : {e}") from e
 
     except (KeyError, IndexError) as e:
-        raise RuntimeError(
-            f"Réponse Gemini image inattendue (pas de données image) : {e}"
-        ) from e
+        raise RuntimeError(f"Réponse Gemini image invalide : {e}") from e
 
 
 # ──────────────────────────────────────────────
@@ -235,14 +246,14 @@ def incruster_texte(image_in: str, texte: str, image_out: str) -> None:
     )
 
     try:
-        print("  🎨 Incrustation du texte via ffmpeg...")
+        print("  🎨 Incrustation texte via ffmpeg...")
         subprocess.run(
             ["ffmpeg", "-i", image_in, "-vf", filtre, "-frames:v", "1", "-y", image_out],
             check=True,
             capture_output=True,
             text=True,
         )
-        print(f"  ✅ Image avec texte : {image_out}")
+        print(f"  ✅ Image finale : {image_out}")
 
     except FileNotFoundError:
         raise RuntimeError(
@@ -256,11 +267,11 @@ def incruster_texte(image_in: str, texte: str, image_out: str) -> None:
 # Facebook Graph API
 # ──────────────────────────────────────────────
 def uploader_photo_non_publiee(image_path: str) -> str:
-    """Upload une photo en mode non publié, retourne son photo_id."""
+    """Upload une photo non publiée, retourne son photo_id."""
     endpoint = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{FB_PAGE_ID}/photos"
 
     try:
-        print("  📤 Upload photo Facebook (non publiée)...")
+        print("  📤 Upload photo Facebook...")
         with open(image_path, "rb") as f:
             reponse = _requete_avec_retry(
                 "POST",
@@ -275,21 +286,13 @@ def uploader_photo_non_publiee(image_path: str) -> str:
         if not photo_id:
             raise ValueError(f"Réponse FB inattendue : {resultat}")
 
-        print(f"  ✅ Photo uploadée — ID : {photo_id}")
+        print(f"  ✅ Photo ID : {photo_id}")
         return photo_id
 
     except requests.exceptions.HTTPError as e:
-        corps = ""
-        if e.response is not None:
-            try:
-                err = e.response.json().get("error", {})
-                corps = f"[{err.get('type','?')}] {err.get('message','?')}"
-            except Exception:
-                corps = e.response.text[:300]
-        raise RuntimeError(f"Facebook upload photo : {corps}") from e
-
+        raise _erreur_facebook(e, "upload photo") from e
     except OSError as e:
-        raise RuntimeError(f"Fichier image illisible '{image_path}' : {e}") from e
+        raise RuntimeError(f"Fichier illisible '{image_path}' : {e}") from e
 
 
 def publier_story(photo_id: str) -> dict:
@@ -297,7 +300,7 @@ def publier_story(photo_id: str) -> dict:
     endpoint = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{FB_PAGE_ID}/photo_stories"
 
     try:
-        print("  🚀 Publication de la story...")
+        print("  🚀 Publication story...")
         reponse = _requete_avec_retry(
             "POST",
             endpoint,
@@ -309,18 +312,11 @@ def publier_story(photo_id: str) -> dict:
         if "id" not in resultat:
             raise ValueError(f"Réponse FB inattendue : {resultat}")
 
-        print("  ✅ Story publiée avec succès !")
+        print("  ✅ Story publiée !")
         return resultat
 
     except requests.exceptions.HTTPError as e:
-        corps = ""
-        if e.response is not None:
-            try:
-                err = e.response.json().get("error", {})
-                corps = f"[{err.get('type','?')}] {err.get('message','?')}"
-            except Exception:
-                corps = e.response.text[:300]
-        raise RuntimeError(f"Facebook publication story : {corps}") from e
+        raise _erreur_facebook(e, "publication story") from e
 
 
 # ──────────────────────────────────────────────
@@ -328,21 +324,16 @@ def publier_story(photo_id: str) -> dict:
 # ──────────────────────────────────────────────
 def main() -> None:
     print("=" * 50)
-    print("🎬 Nyavo Channel — Génération de Story")
+    print("🎬 Nyavo Channel — Story")
     print("=" * 50)
 
-    # Étape 1 : Texte
     pilier, texte = generer_texte_story()
     print(f"\n📌 Pilier : {PILLARS[pilier]['label']}")
     print(f"📌 Texte  : {texte}\n")
 
-    # Étape 2 : Image
     generer_image_story(pilier, "story_raw.png")
-
-    # Étape 3 : Incrustation texte
     incruster_texte("story_raw.png", texte, STORY_IMAGE_PATH)
 
-    # Étape 4 : Upload + publication
     photo_id = uploader_photo_non_publiee(STORY_IMAGE_PATH)
     resultat = publier_story(photo_id)
 
