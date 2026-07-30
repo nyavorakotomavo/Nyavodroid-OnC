@@ -1,14 +1,17 @@
-name: Auto-post Nyavo Channel — Reels
+name: Auto-post Nyavo Channel — Multi-formats
 
 on:
   schedule:
+    # Matin → Texte seul
     - cron: "0 7 * * 1-6"
+    # Midi → Image + Texte
     - cron: "30 9 * * 1-6"
+    # Soir → Reel vidéo
     - cron: "0 17 * * 0,1-6"
   workflow_dispatch: {}
 
 jobs:
-  reel:
+  publish:
     runs-on: ubuntu-latest
 
     steps:
@@ -20,18 +23,18 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Installer les dépendances système
+      - name: Dépendances système
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
 
-      - name: Installer les dépendances Python
+      - name: Dépendances Python
         run: pip install "requests>=2.31.0"
 
-      - name: Publier le Reel
+      - name: Publier le contenu
         env:
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-        run: python post_story.py
+        run: python post_content.py
