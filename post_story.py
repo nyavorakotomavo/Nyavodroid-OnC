@@ -2,6 +2,7 @@
 """
 Nyavo Channel — publication STORY (image courte, texte minimal).
 Projet Gemini : nyavo-story (clé dédiée GEMINI_API_KEY_STORY)
+Fallback image : Pollinations anonyme (si Gemini 429)
 Secrets requis : FB_PAGE_ID, FB_PAGE_ACCESS_TOKEN, GEMINI_API_KEY_STORY
 Dépendances : requests>=2.31.0 | ffmpeg + fonts-dejavu-core
 """
@@ -13,6 +14,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.parse
 
 import requests
 
@@ -28,10 +30,10 @@ from content_config import (
 
 
 # ──────────────────────────────────────────────
-# Nettoyage des secrets et textes
+# Nettoyage
 # ──────────────────────────────────────────────
 def _nettoyer_secret(valeur: str) -> str:
-    """Supprime tout caractère non-ASCII d'un secret (clés API, tokens)."""
+    """Supprime tout caractère non-ASCII d'un secret."""
     return valeur.encode("ascii", "ignore").decode("ascii").strip()
 
 
@@ -39,8 +41,7 @@ def _nettoyer_texte(texte: str) -> str:
     """Supprime caractères Unicode invisibles + Markdown."""
     texte = re.sub(
         r'[\u200e\u200f\u200b\u200c\u200d\ufeff\u00ad\u2060\u180e\u202a-\u202e\u2066-\u2069]',
-        '',
-        texte,
+        '', texte,
     )
     texte = texte.replace('**', '').replace('*', '')
     texte = ''.join(c for c in texte if c.isprintable() or c in '\n\t')
@@ -68,8 +69,11 @@ GEMINI_TEXT_URL = (
 GEMINI_IMAGE_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image"
 
+# Fallback image gratuit (sans clé API)
+POLLINATIONS_IMAGE_URL = "https://image.pollinations.ai/prompt/"
+
 MAX_RETRIES = 4
-RETRY_DELAY = 15
+RETRY_DELAY = 30
 TIMEOUT = 60
 
 
@@ -77,27 +81,25 @@ TIMEOUT = 60
 # Utilitaires
 # ──────────────────────────────────────────────
 def _requete_avec_retry(
-    methode: str,
-    url: str,
-    *,
-    headers: dict | None = None,
-    json_data: dict | None = None,
-    data: dict | None = None,
-    files: dict | None = None,
-    timeout: int = TIMEOUT,
+    methode: str, url: str, *,
+    headers: dict | None = None, json_data: dict | None = None,
+    data: dict | None = None, files: dict | None = None,
+    timeout: int = TIMEOUT, stream: bool = False,
 ) -> requests.Response:
     derniere_erreur: Exception | None = None
-
     for tentative in range(1, MAX_RETRIES + 1):
         try:
             reponse = requests.request(
                 method=methode, url=url, headers=headers,
-                json=json_data, data=data, files=files, timeout=timeout,
+                json=json_data, data=data, files=files,
+                timeout=timeout, stream=stream,
             )
             if reponse.status_code == 429 or reponse.status_code >= 500:
                 attente = RETRY_DELAY * tentative
                 print(f"  ⚠️  HTTP {reponse.status_code} — retry dans {attente}s ({tentative}/{MAX_RETRIES})")
-                derniere_erreur = requests.exceptions.HTTPError(f"HTTP {reponse.status_code}", response=reponse)
+                derniere_erreur = requests.exceptions.HTTPError(
+                    f"HTTP {reponse.status_code}", response=reponse
+                )
                 time.sleep(attente)
                 continue
             reponse.raise_for_status()
@@ -153,7 +155,7 @@ def _extraire_image_base64(resultat: dict) -> str:
 
 
 # ──────────────────────────────────────────────
-# Génération du texte
+# Génération du texte (Gemini)
 # ──────────────────────────────────────────────
 def generer_texte_story() -> tuple[str, str, str]:
     pilier = random.choices(PILLAR_KEYS, weights=[PILLAR_WEIGHTS[k] for k in PILLAR_KEYS], k=1)[0]
@@ -179,8 +181,7 @@ def generer_texte_story() -> tuple[str, str, str]:
         print(f"     Axe   : {PILLARS[pilier]['label']}")
         print(f"     Sujet : {sujet}")
         reponse = _requete_avec_retry(
-            "POST",
-            f"{GEMINI_TEXT_URL}?key={GEMINI_API_KEY}",
+            "POST", f"{GEMINI_TEXT_URL}?key={GEMINI_API_KEY}",
             headers={"Content-Type": "application/json"},
             json_data={
                 "contents": [{"parts": [{"text": prompt}]}],
@@ -203,43 +204,77 @@ def generer_texte_story() -> tuple[str, str, str]:
 
 
 # ──────────────────────────────────────────────
-# Génération de l'image
+# Génération image : Gemini → fallback Pollinations
 # ──────────────────────────────────────────────
+def _image_gemini(prompt: str, chemin: str) -> None:
+    """Tente la génération via Gemini Interactions API."""
+    reponse = _requete_avec_retry(
+        "POST", GEMINI_IMAGE_URL,
+        headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
+        json_data={
+            "model": GEMINI_IMAGE_MODEL,
+            "input": [{"type": "text", "text": prompt}],
+            "response_format": {"type": "image", "aspect_ratio": "9:16", "image_size": "1K"},
+        },
+        timeout=120,
+    )
+    image_b64 = _extraire_image_base64(reponse.json())
+    with open(chemin, "wb") as f:
+        f.write(base64.b64decode(image_b64))
+
+
+def _image_pollinations(prompt: str, chemin: str) -> None:
+    """Fallback gratuit : Pollinations anonyme (sans clé API)."""
+    encoded = urllib.parse.quote(prompt)
+    url = (
+        f"{POLLINATIONS_IMAGE_URL}{encoded}"
+        f"?width={STORY_WIDTH}&height={STORY_HEIGHT}&nologo=true"
+    )
+    reponse = _requete_avec_retry(
+        "GET", url,
+        headers={"User-Agent": "NyavoChannel/1.0"},
+        timeout=120,
+        stream=True,
+    )
+    with open(chemin, "wb") as f:
+        for chunk in reponse.iter_content(chunk_size=8192):
+            f.write(chunk)
+
+
 def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
+    """Génère une image 9:16 : Gemini d'abord, Pollinations en fallback."""
     prompt = _nettoyer_texte(
         f"Illustration verticale 9:16 pour ce texte : {texte}\n"
         f"Axe : {PILLARS[pilier]['label']}\n"
         f"Style : {STYLE_IMAGE_SUFFIX}\n"
         f"L'image doit refléter visuellement le contenu du texte."
     )
+
+    # Tentative 1 : Gemini
     try:
         print("  🖼️  Image via Gemini [story]...")
-        reponse = _requete_avec_retry(
-            "POST",
-            GEMINI_IMAGE_URL,
-            headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
-            json_data={
-                "model": GEMINI_IMAGE_MODEL,
-                "input": [{"type": "text", "text": prompt}],
-                "response_format": {"type": "image", "aspect_ratio": "9:16", "image_size": "1K"},
-            },
-            timeout=120,
-        )
-        image_b64 = _extraire_image_base64(reponse.json())
-        with open(chemin, "wb") as f:
-            f.write(base64.b64decode(image_b64))
+        _image_gemini(prompt, chemin)
         taille = os.path.getsize(chemin)
         if taille < 1024:
             raise ValueError(f"Image suspecte ({taille} octets).")
-        print(f"  ✅ Image : {chemin} ({taille:,} octets)")
-    except requests.exceptions.HTTPError as e:
-        code = e.response.status_code if e.response is not None else "N/A"
-        corps = e.response.text[:400] if e.response is not None else ""
-        raise RuntimeError(f"Gemini image [story] (HTTP {code}) : {corps}") from e
-    except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Gemini image [story] injoignable : {e}") from e
-    except (KeyError, IndexError, ValueError) as e:
-        raise RuntimeError(f"Réponse Gemini image [story] invalide : {e}") from e
+        print(f"  ✅ Image Gemini : {chemin} ({taille:,} octets)")
+        return
+    except Exception as e:
+        print(f"  ⚠️  Gemini image échec : {e}")
+
+    # Tentative 2 : Pollinations (fallback gratuit)
+    try:
+        print("  🖼️  Fallback image via Pollinations [story]...")
+        _image_pollinations(prompt, chemin)
+        taille = os.path.getsize(chemin)
+        if taille < 1024:
+            raise ValueError(f"Image Pollinations suspecte ({taille} octets).")
+        print(f"  ✅ Image Pollinations : {chemin} ({taille:,} octets)")
+    except Exception as e2:
+        raise RuntimeError(
+            f"Gemini ET Pollinations ont échoué pour l'image.\n"
+            f"Gemini : {e}\nPollinations : {e2}"
+        ) from e2
 
 
 # ──────────────────────────────────────────────
