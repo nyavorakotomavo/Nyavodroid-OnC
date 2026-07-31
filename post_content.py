@@ -76,7 +76,7 @@ STORY_WIDTH, STORY_HEIGHT = 1080, 1920  # ← CORRIGÉ : manquait → NameError 
 MISTRAL_TEXT_URL = "https://api.mistral.ai/v1/chat/completions"
 
 # ✅ Modèle texte : gemini-2.5-flash  # ← CORRIGÉ
-# (le "-lite" a été RETIRÉ par Google — ne pas remettre ; commentaire précédent inversé)
+# (le "-lite" a été RETIRÉ par Google — ne pas remettre)
 GEMINI_TEXT_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
     "models/gemini-2.5-flash:generateContent"
@@ -265,6 +265,7 @@ def _image_pollinations(prompt: str, chemin: str) -> None:
 
 def generer_image(prompt: str, chemin: str) -> None:
     prompt_propre = _nettoyer_texte(prompt)
+    erreur_gemini: Exception | None = None  # ← CORRIGÉ : on garde une trace de l'erreur Gemini
     try:
         print(f"  🖼️  Image via Gemini...")
         _image_gemini(prompt_propre, chemin)
@@ -274,6 +275,7 @@ def generer_image(prompt: str, chemin: str) -> None:
         print(f"  ✅ Image Gemini : {chemin} ({taille:,} octets)")
         return
     except Exception as e:
+        erreur_gemini = e  # ← CORRIGÉ
         print(f"  ⚠️  Gemini image échec : {e}")
 
     try:
@@ -284,7 +286,9 @@ def generer_image(prompt: str, chemin: str) -> None:
             raise ValueError(f"Image Pollinations suspecte ({taille} octets)")
         print(f"  ✅ Image Pollinations : {chemin} ({taille:,} octets)")
     except Exception as e2:
-        raise RuntimeError(f"Gemini ET Pollinations ont échoué.\nGemini : {e}\nPollinations : {e2}") from e2
+        raise RuntimeError(
+            f"Gemini ET Pollinations ont échoué.\nGemini : {erreur_gemini}\nPollinations : {e2}"  # ← CORRIGÉ : {e} → {erreur_gemini}
+        ) from e2
 
 
 # ══════════════════════════════════════════════
@@ -621,7 +625,7 @@ def _assembler_video(images: list[str], textes: list[str], sortie: str) -> None:
         "-c:v", "libx264", "-preset", "fast", "-crf", "23",
         "-c:a", "aac", "-b:a", "128k",
         "-pix_fmt", "yuv420p",
-        "-shortest" if audio_existe else "-t", str(n * DUREE_PAR_IMAGE),
+        "-t", str(n * DUREE_PAR_IMAGE),  # ← CORRIGÉ : durée fixe (le ternaire -shortest/-t ajoutait un argument orphelin)
         "-y", sortie,
     ]
     try:
