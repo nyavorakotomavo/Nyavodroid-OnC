@@ -33,12 +33,10 @@ from content_config import (
 # Nettoyage
 # ──────────────────────────────────────────────
 def _nettoyer_secret(valeur: str) -> str:
-    """Supprime tout caractère non-ASCII d'un secret."""
     return valeur.encode("ascii", "ignore").decode("ascii").strip()
 
 
 def _nettoyer_texte(texte: str) -> str:
-    """Supprime caractères Unicode invisibles + Markdown."""
     texte = re.sub(
         r'[\u200e\u200f\u200b\u200c\u200d\ufeff\u00ad\u2060\u180e\u202a-\u202e\u2066-\u2069]',
         '', texte,
@@ -62,14 +60,14 @@ GRAPH_API_VERSION = "v25.0"
 STORY_IMAGE_PATH = "story_image.png"
 STORY_WIDTH, STORY_HEIGHT = 1080, 1920
 
+# ✅ Modèle texte corrigé : gemini-2.5-flash-lite (remplace gemini-2.5-flash déprécié)
 GEMINI_TEXT_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-2.5-flash:generateContent"
+    "models/gemini-2.5-flash-lite:generateContent"
 )
 GEMINI_IMAGE_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image"
 
-# Fallback image gratuit (sans clé API)
 POLLINATIONS_IMAGE_URL = "https://image.pollinations.ai/prompt/"
 
 MAX_RETRIES = 4
@@ -154,6 +152,28 @@ def _extraire_image_base64(resultat: dict) -> str:
     raise ValueError(f"Impossible d'extraire l'image. Clés : {list(resultat.keys())}")
 
 
+def verifier_token_facebook() -> None:
+    """Vérifie que le token FB a les bonnes permissions avant de continuer."""
+    try:
+        reponse = requests.get(
+            f"https://graph.facebook.com/{GRAPH_API_VERSION}/me",
+            params={"access_token": FB_PAGE_ACCESS_TOKEN, "fields": "id,name"},
+            timeout=15,
+        )
+        if reponse.status_code != 200:
+            err = reponse.json().get("error", {})
+            raise RuntimeError(
+                f"Token Facebook invalide ou expiré.\n"
+                f"Erreur : {err.get('message', '?')}\n"
+                f"Action : Régénérez un token système avec les permissions "
+                f"pages_manage_posts, pages_read_engagement, publish_video."
+            )
+        info = reponse.json()
+        print(f"  ✅ Token FB valide — Page : {info.get('name', '?')} (ID: {info.get('id', '?')})")
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Impossible de vérifier le token Facebook : {e}") from e
+
+
 # ──────────────────────────────────────────────
 # Génération du texte (Gemini)
 # ──────────────────────────────────────────────
@@ -207,7 +227,6 @@ def generer_texte_story() -> tuple[str, str, str]:
 # Génération image : Gemini → fallback Pollinations
 # ──────────────────────────────────────────────
 def _image_gemini(prompt: str, chemin: str) -> None:
-    """Tente la génération via Gemini Interactions API."""
     reponse = _requete_avec_retry(
         "POST", GEMINI_IMAGE_URL,
         headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
@@ -224,17 +243,11 @@ def _image_gemini(prompt: str, chemin: str) -> None:
 
 
 def _image_pollinations(prompt: str, chemin: str) -> None:
-    """Fallback gratuit : Pollinations anonyme (sans clé API)."""
     encoded = urllib.parse.quote(prompt)
-    url = (
-        f"{POLLINATIONS_IMAGE_URL}{encoded}"
-        f"?width={STORY_WIDTH}&height={STORY_HEIGHT}&nologo=true"
-    )
+    url = f"{POLLINATIONS_IMAGE_URL}{encoded}?width={STORY_WIDTH}&height={STORY_HEIGHT}&nologo=true"
     reponse = _requete_avec_retry(
-        "GET", url,
-        headers={"User-Agent": "NyavoChannel/1.0"},
-        timeout=120,
-        stream=True,
+        "GET", url, headers={"User-Agent": "NyavoChannel/1.0"},
+        timeout=120, stream=True,
     )
     with open(chemin, "wb") as f:
         for chunk in reponse.iter_content(chunk_size=8192):
@@ -242,15 +255,12 @@ def _image_pollinations(prompt: str, chemin: str) -> None:
 
 
 def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
-    """Génère une image 9:16 : Gemini d'abord, Pollinations en fallback."""
     prompt = _nettoyer_texte(
         f"Illustration verticale 9:16 pour ce texte : {texte}\n"
         f"Axe : {PILLARS[pilier]['label']}\n"
         f"Style : {STYLE_IMAGE_SUFFIX}\n"
         f"L'image doit refléter visuellement le contenu du texte."
     )
-
-    # Tentative 1 : Gemini
     try:
         print("  🖼️  Image via Gemini [story]...")
         _image_gemini(prompt, chemin)
@@ -262,7 +272,6 @@ def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
     except Exception as e:
         print(f"  ⚠️  Gemini image échec : {e}")
 
-    # Tentative 2 : Pollinations (fallback gratuit)
     try:
         print("  🖼️  Fallback image via Pollinations [story]...")
         _image_pollinations(prompt, chemin)
@@ -271,10 +280,7 @@ def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
             raise ValueError(f"Image Pollinations suspecte ({taille} octets).")
         print(f"  ✅ Image Pollinations : {chemin} ({taille:,} octets)")
     except Exception as e2:
-        raise RuntimeError(
-            f"Gemini ET Pollinations ont échoué pour l'image.\n"
-            f"Gemini : {e}\nPollinations : {e2}"
-        ) from e2
+        raise RuntimeError(f"Gemini ET Pollinations ont échoué.\nGemini : {e}\nPollinations : {e2}") from e2
 
 
 # ──────────────────────────────────────────────
@@ -354,6 +360,8 @@ def main() -> None:
     print("=" * 50)
     print("🎬 Nyavo Channel — Story [Projet Gemini A]")
     print("=" * 50)
+
+    verifier_token_facebook()
 
     pilier, sujet, texte = generer_texte_story()
     print(f"\n📌 Axe    : {PILLARS[pilier]['label']}")
