@@ -71,13 +71,15 @@ REEL_VIDEO_PATH = "reel_video.mp4"
 NB_IMAGES_REEL = 3
 DUREE_PAR_IMAGE = 3.5
 AUDIO_PATH = "background_music.mp3"
+STORY_WIDTH, STORY_HEIGHT = 1080, 1920  # ← CORRIGÉ : manquait → NameError sur le Reel
 
 MISTRAL_TEXT_URL = "https://api.mistral.ai/v1/chat/completions"
 
-# ✅ Modèle texte corrigé : gemini-2.5-flash-lite (remplace gemini-2.5-flash déprécié)
+# ✅ Modèle texte : gemini-2.5-flash  # ← CORRIGÉ
+# (le "-lite" a été RETIRÉ par Google — ne pas remettre ; commentaire précédent inversé)
 GEMINI_TEXT_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-2.5-flash-lite:generateContent"
+    "models/gemini-2.5-flash:generateContent"
 )
 GEMINI_IMAGE_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image"
