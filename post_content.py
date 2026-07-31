@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Nyavo Channel — publication multi-formats.
-  - 📝 Texte seul     (POST /feed)
+  - 📝 Texte seul     (POST /feed) — format Hook/Contexte/CTA/Hashtags
   - 🖼️  Image + Texte  (POST /photos)
   - 🎬 Reel vidéo     (POST /video_reels — storytelling 3 actes)
 
@@ -73,9 +73,11 @@ DUREE_PAR_IMAGE = 3.5
 AUDIO_PATH = "background_music.mp3"
 
 MISTRAL_TEXT_URL = "https://api.mistral.ai/v1/chat/completions"
+
+# ✅ Modèle texte corrigé : gemini-2.5-flash-lite (remplace gemini-2.5-flash déprécié)
 GEMINI_TEXT_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-2.5-flash:generateContent"
+    "models/gemini-2.5-flash-lite:generateContent"
 )
 GEMINI_IMAGE_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image"
@@ -205,6 +207,29 @@ def _extraire_image_base64(resultat: dict) -> str:
     raise ValueError(f"Impossible d'extraire l'image. Clés : {list(resultat.keys())}")
 
 
+def verifier_token_facebook() -> None:
+    """Vérifie que le token FB a les bonnes permissions avant de continuer."""
+    try:
+        reponse = requests.get(
+            f"https://graph.facebook.com/{GRAPH_API_VERSION}/me",
+            params={"access_token": FB_PAGE_ACCESS_TOKEN, "fields": "id,name"},
+            timeout=15,
+        )
+        if reponse.status_code != 200:
+            err = reponse.json().get("error", {})
+            raise RuntimeError(
+                f"Token Facebook invalide ou expiré.\n"
+                f"Erreur : {err.get('message', '?')}\n"
+                f"Action : Régénérez un token système avec les permissions "
+                f"pages_manage_posts, pages_read_engagement, publish_video.\n"
+                f"Vérifiez aussi que FB_PAGE_ID = {FB_PAGE_ID} est correct."
+            )
+        info = reponse.json()
+        print(f"  ✅ Token FB valide — Page : {info.get('name', '?')} (ID: {info.get('id', '?')})")
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Impossible de vérifier le token Facebook : {e}") from e
+
+
 # ══════════════════════════════════════════════
 #  GÉNÉRATION IMAGE : Gemini → fallback Pollinations
 # ══════════════════════════════════════════════
@@ -226,15 +251,10 @@ def _image_gemini(prompt: str, chemin: str) -> None:
 
 def _image_pollinations(prompt: str, chemin: str) -> None:
     encoded = urllib.parse.quote(prompt)
-    url = (
-        f"{POLLINATIONS_IMAGE_URL}{encoded}"
-        f"?width={POLLINATIONS_WIDTH}&height={POLLINATIONS_HEIGHT}&nologo=true"
-    )
+    url = f"{POLLINATIONS_IMAGE_URL}{encoded}?width={POLLINATIONS_WIDTH}&height={POLLINATIONS_HEIGHT}&nologo=true"
     reponse = _requete_avec_retry(
-        "GET", url,
-        headers={"User-Agent": "NyavoChannel/1.0"},
-        timeout=120,
-        stream=True,
+        "GET", url, headers={"User-Agent": "NyavoChannel/1.0"},
+        timeout=120, stream=True,
     )
     with open(chemin, "wb") as f:
         for chunk in reponse.iter_content(chunk_size=8192):
@@ -242,9 +262,7 @@ def _image_pollinations(prompt: str, chemin: str) -> None:
 
 
 def generer_image(prompt: str, chemin: str) -> None:
-    """Génère une image 9:16 : Gemini d'abord, Pollinations en fallback."""
     prompt_propre = _nettoyer_texte(prompt)
-
     try:
         print(f"  🖼️  Image via Gemini...")
         _image_gemini(prompt_propre, chemin)
@@ -264,10 +282,7 @@ def generer_image(prompt: str, chemin: str) -> None:
             raise ValueError(f"Image Pollinations suspecte ({taille} octets)")
         print(f"  ✅ Image Pollinations : {chemin} ({taille:,} octets)")
     except Exception as e2:
-        raise RuntimeError(
-            f"Gemini ET Pollinations ont échoué.\n"
-            f"Gemini : {e}\nPollinations : {e2}"
-        ) from e2
+        raise RuntimeError(f"Gemini ET Pollinations ont échoué.\nGemini : {e}\nPollinations : {e2}") from e2
 
 
 # ══════════════════════════════════════════════
@@ -299,7 +314,7 @@ def _texte_mistral(prompt: str) -> str:
         json_data={
             "model": "mistral-small-latest",
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 300, "temperature": 0.9,
+            "max_tokens": 500, "temperature": 0.9,
         },
         timeout=30,
     )
@@ -312,7 +327,7 @@ def _texte_gemini(prompt: str) -> str:
         headers={"Content-Type": "application/json"},
         json_data={
             "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"maxOutputTokens": 300, "temperature": 0.9},
+            "generationConfig": {"maxOutputTokens": 500, "temperature": 0.9},
         },
         timeout=30,
     )
@@ -334,24 +349,60 @@ def generer_texte(prompt: str, contexte: str = "") -> str:
 
 
 # ══════════════════════════════════════════════
-#  FORMAT 1 : TEXTE SEUL
+#  FORMAT 1 : TEXTE SEUL (Hook/Contexte/CTA/Hashtags)
 # ══════════════════════════════════════════════
 def publier_texte_seul(pilier: str) -> dict:
+    """
+    Publie un post texte au format optimisé :
+      🪝 Hook (< 80 car., 1 emoji, phrase choc)
+      (saut de ligne)
+      Contexte (1-5 phrases, 1 terme technique)
+      (saut de ligne)
+      Question/CTA (binaire ou incitation au partage)
+      (saut de ligne)
+      #Hashtag1 #Hashtag2 #Hashtag3
+    """
     style = random.choice(STORY_PROMPTS)
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
+
     prompt = (
         f"Tu es Nyavo Channel, une chaîne tech qui révèle les mécanismes "
         f"cachés du monde numérique.\n\n"
         f"Axe éditorial : {PILLARS[pilier]['label']}\n"
-        f"Sujet imposé : {sujet}\nFormat : {style}\n\n"
-        f"Consignes :\n"
-        f"- Écris un post Facebook de 3-5 lignes en français\n"
+        f"Sujet imposé : {sujet}\n"
+        f"Angle : {style}\n\n"
+        f"Écris un post Facebook en respectant EXACTEMENT cette structure "
+        f"(chaque bloc séparé par un saut de ligne vide) :\n\n"
+        f"BLOC 1 — HOOK :\n"
+        f"- Moins de 80 caractères\n"
+        f"- Commence par 1 seul emoji pertinent\n"
+        f"- Phrase choc, percutante, qui donne envie de lire la suite\n"
+        f"- Pas de point final\n\n"
+        f"BLOC 2 — CONTEXTE :\n"
+        f"- 1 à 5 phrases maximum\n"
+        f"- Inclus exactement 1 terme technique précis (ex: DNS, API, LLM, GPU...)\n"
         f"- Ton : {TON_EDITORIAL}\n"
-        f"- Inclus 2-3 termes techniques précis\n"
-        f"- Termine par 2-3 hashtags pertinents\n"
-        f"- Pas de guillemets, pas de titre, pas de Markdown\n"
-        f"- Interdit : généralités, banalités, hors-sujet\n"
+        f"- Vulgarise sans diluer le hook\n\n"
+        f"BLOC 3 — QUESTION/CTA :\n"
+        f"- UNE seule question binaire (oui/non) OU incitation au partage\n"
+        f"- Pousse au commentaire\n\n"
+        f"BLOC 4 — HASHTAGS :\n"
+        f"- Exactement 2 ou 3 hashtags pertinents\n"
+        f"- Séparés du texte par un saut de ligne vide\n\n"
+        f"RÈGLES ABSOLUES :\n"
+        f"- Pas de Markdown, pas d'astérisques, pas de guillemets\n"
+        f"- Pas de titre, pas de numérotation\n"
+        f"- Chaque bloc est séparé par EXACTEMENT un saut de ligne vide\n"
+        f"- Interdit : généralités, banalités, hors-sujet, pavés\n\n"
+        f"Exemple de format attendu (ne pas copier) :\n"
+        f"🔥 Ton mot de passe est déjà en vente\n\n"
+        f"Chaque jour, 24 000 identifiants fuient via des malwares "
+        f"de type infostealer. Les hackers n'ont même plus besoin "
+        f"de cracker : ils récupèrent tes sessions cookies directement.\n\n"
+        f"Tu utilises un gestionnaire de mots de passe ?\n\n"
+        f"#Cybersécurité #Tech #NyavoChannel"
     )
+
     texte = generer_texte(prompt, "(post texte)")
     print(f"\n📌 Axe    : {PILLARS[pilier]['label']}")
     print(f"📌 Sujet  : {sujet}")
@@ -383,7 +434,9 @@ def publier_image_texte(pilier: str) -> dict:
     prompt_legende = (
         f"Tu es Nyavo Channel.\nAxe : {label}\nSujet : {sujet}\n"
         f"Écris une légende Facebook de 2-3 lignes en français.\n"
-        f"Ton : {TON_EDITORIAL}\nInclus 2-3 hashtags. Pas de guillemets, pas de Markdown."
+        f"Ton : {TON_EDITORIAL}\n"
+        f"Termine par 2-3 hashtags.\n"
+        f"Pas de guillemets, pas de Markdown."
     )
     legende = generer_texte(prompt_legende, "(légende)")
 
@@ -419,26 +472,17 @@ def publier_image_texte(pilier: str) -> dict:
 #  FORMAT 3 : REEL VIDÉO — STORYTELLING 3 ACTES
 # ══════════════════════════════════════════════
 def _generer_phrases_reel(pilier: str) -> tuple[str, list[str]]:
-    """
-    Génère une mini-histoire en 3 actes pour le Reel.
-    Retourne (sujet, [phrase_acte1, phrase_acte2, phrase_acte3]).
-    """
     label = PILLARS[pilier]["label"]
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
 
-    # Construire la description des 3 actes pour le prompt
     actes_desc = ""
     for i, acte in enumerate(STRUCTURE_REEL, 1):
-        actes_desc += (
-            f"Acte {i} — {acte['acte']} : {acte['role']}\n"
-            f"  → {acte['consigne_texte']}\n"
-        )
+        actes_desc += f"Acte {i} — {acte['acte']} : {acte['role']}\n  → {acte['consigne_texte']}\n"
 
     prompt = (
         f"Tu es Nyavo Channel, une chaîne tech immersive spécialisée dans le "
         f"storytelling technologique.\n\n"
-        f"Axe : {label}\n"
-        f"Sujet imposé : {sujet}\n\n"
+        f"Axe : {label}\nSujet imposé : {sujet}\n\n"
         f"MISSION : Raconte une MINI-HISTOIRE en exactement {NB_IMAGES_REEL} actes.\n"
         f"Les {NB_IMAGES_REEL} phrases doivent former une narration cohérente "
         f"avec une progression dramatique, PAS des faits isolés.\n\n"
@@ -447,12 +491,11 @@ def _generer_phrases_reel(pilier: str) -> tuple[str, list[str]]:
         f"- Chaque phrase : moins de 10 mots\n"
         f"- Numérotées de 1 à {NB_IMAGES_REEL}, une par ligne\n"
         f"- Ton : {TON_EDITORIAL}\n"
-        f"- Les 3 phrases doivent se suivre comme une histoire : "
-        f"début → tension → chute\n"
+        f"- Les 3 phrases doivent se suivre comme une histoire : début → tension → chute\n"
         f"- Le lecteur doit avoir envie de voir la scène suivante\n"
         f"- PAS de Markdown, PAS d'astérisques\n"
         f"- Interdit : faits isolés sans lien, généralités, hors-sujet\n\n"
-        f"Exemple de structure (ne pas copier, juste le format) :\n"
+        f"Exemple de structure (ne pas copier) :\n"
         f"1. [Accroche] En 2024, un serveur a disparu sans trace\n"
         f"2. [Tension] 48h plus tard, 3 millions de comptes étaient vides\n"
         f"3. [Révélation] Le coupable ? Une seule ligne de code\n\n"
@@ -470,24 +513,17 @@ def _generer_phrases_reel(pilier: str) -> tuple[str, list[str]]:
                 phrases.append(phrase)
 
     if len(phrases) < NB_IMAGES_REEL:
-        raise ValueError(
-            f"Phrases insuffisantes ({len(phrases)}/{NB_IMAGES_REEL}) : {texte_brut}"
-        )
+        raise ValueError(f"Phrases insuffisantes ({len(phrases)}/{NB_IMAGES_REEL}) : {texte_brut}")
     return sujet, phrases[:NB_IMAGES_REEL]
 
 
 def _generer_images_reel(pilier: str, phrases: list[str], sujet: str) -> list[str]:
-    """
-    Génère les 3 images du Reel avec continuité narrative.
-    Chaque image est une scène qui suit la précédente.
-    """
     label = PILLARS[pilier]["label"]
     chemins = []
 
     for i, (phrase, acte) in enumerate(zip(phrases, STRUCTURE_REEL), 1):
         chemin = f"reel_img_{i}.png"
 
-        # Contexte narratif pour la cohérence visuelle
         contexte_narratif = ""
         if i > 1:
             contexte_narratif += f"Scène précédente : « {phrases[i-2]} »\n"
@@ -496,23 +532,18 @@ def _generer_images_reel(pilier: str, phrases: list[str], sujet: str) -> list[st
 
         prompt = (
             f"Scène {i}/{NB_IMAGES_REEL} d'une mini-histoire visuelle en 3 actes.\n"
-            f"Sujet global : {sujet}\n"
-            f"Axe : {label}\n\n"
+            f"Sujet global : {sujet}\nAxe : {label}\n\n"
             f"ACTE {i} — {acte['acte']} : {acte['role']}\n"
             f"Texte de cette scène : « {phrase} »\n"
             f"Ambiance : {acte['ambiance']}\n"
             f"Cadrage : {acte['consigne_image']}\n\n"
         )
-
         if contexte_narratif:
             prompt += f"Continuité narrative :\n{contexte_narratif}\n"
-
         prompt += (
             f"Style : {STYLE_IMAGE_SUFFIX}\n"
             f"IMPORTANT : Cette image doit être visuellement cohérente avec "
-            f"les autres scènes de l'histoire. Même univers, même palette "
-            f"de couleurs, même ambiance générale. La progression visuelle "
-            f"doit refléter la progression narrative."
+            f"les autres scènes. Même univers, même palette, même ambiance."
         )
 
         if i > 1:
@@ -528,7 +559,6 @@ def _generer_images_reel(pilier: str, phrases: list[str], sujet: str) -> list[st
 
 
 def _assembler_video(images: list[str], textes: list[str], sortie: str) -> None:
-    """Assemble les 3 scènes en vidéo avec texte animé et transitions."""
     audio_existe = os.path.exists(AUDIO_PATH)
     if not audio_existe:
         print(f"  ⚠️  '{AUDIO_PATH}' absent → vidéo sans son.")
@@ -540,16 +570,9 @@ def _assembler_video(images: list[str], textes: list[str], sortie: str) -> None:
         inputs += ["-i", AUDIO_PATH]
 
     n = len(images)
-
-    # Concaténation avec transitions fondu entre les scènes
-    # Chaque scène a un fade in/out de 0.5s pour la fluidité narrative
     filtres = []
 
-    # Appliquer un léger zoom progressif sur chaque scène (effet Ken Burns)
     for i in range(n):
-        t0 = 0
-        t1 = DUREE_PAR_IMAGE
-        # Zoom lent de 100% à 108% sur la durée de la scène
         filtres.append(
             f"[{i}:v]scale={STORY_WIDTH}:{STORY_HEIGHT}:force_original_aspect_ratio=increase,"
             f"crop={STORY_WIDTH}:{STORY_HEIGHT},"
@@ -559,45 +582,32 @@ def _assembler_video(images: list[str], textes: list[str], sortie: str) -> None:
             f"[scene{i}]"
         )
 
-    # Concaténer les scènes
     concat_inputs = "".join(f"[scene{i}]" for i in range(n))
     filtres.append(f"{concat_inputs}concat=n={n}:v=1:a=0[slideshow]")
 
-    # Texte animé par scène avec indicateur d'acte
     txt_chain = "[slideshow]"
     for i, (texte, acte) in enumerate(zip(textes, STRUCTURE_REEL)):
         t_esc = texte.replace("'", "\\'").replace(":", "\\:").replace("%", "%%")
         t0 = i * DUREE_PAR_IMAGE
         t1 = (i + 1) * DUREE_PAR_IMAGE
-
-        # Fade in/out du texte
         alpha = (
             f"if(lt(t-{t0},0.6),min((t-{t0})/0.6,1),"
             f"if(gt(t,{t1}-0.6),max(1-({t1}-t)/0.6,0),1))"
         )
-
-        # Texte principal (phrase de la scène)
         txt_chain += (
             f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
             f"text='{t_esc}':fontcolor=0x00E5FF:fontsize=56:"
             f"x=(w-text_w)/2:y=h*0.78:box=1:boxcolor=0x0D0D0D@0.75:boxborderw=28:"
-            f"alpha='{alpha}':"
-            f"enable='between(t,{t0 + 0.3},{t1 - 0.3})'"
+            f"alpha='{alpha}':enable='between(t,{t0 + 0.3},{t1 - 0.3})'"
         )
-
-        # Petit indicateur d'acte en haut (ex: "1/3 — ACCROCHE")
         acte_label = f"{i + 1}/{NB_IMAGES_REEL}"
         txt_chain += (
             f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
             f"text='{acte_label}':fontcolor=0x00E5FF@0.5:fontsize=28:"
-            f"x=(w-text_w)/2:y=60:"
-            f"alpha='{alpha}':"
-            f"enable='between(t,{t0 + 0.3},{t1 - 0.3})'"
+            f"x=(w-text_w)/2:y=60:alpha='{alpha}':enable='between(t,{t0 + 0.3},{t1 - 0.3})'"
         )
-
     filtres.append(txt_chain + "[final]")
 
-    # Mapping
     map_args = ["-map", "[final]"]
     if audio_existe:
         map_args += ["-map", f"{n}:a"]
@@ -624,9 +634,7 @@ def _assembler_video(images: list[str], textes: list[str], sortie: str) -> None:
 
 
 def publier_reel(pilier: str) -> dict:
-    """Publie un Reel vidéo storytelling 3 actes."""
     sujet, phrases = _generer_phrases_reel(pilier)
-
     print(f"\n📌 Axe   : {PILLARS[pilier]['label']}")
     print(f"📌 Sujet : {sujet}")
     print(f"📌 Storytelling Reel ({NB_IMAGES_REEL} actes) :")
@@ -681,6 +689,8 @@ def main() -> None:
     print("=" * 60)
     print("🎬 Nyavo Channel — Multi-formats [Projet Gemini B]")
     print("=" * 60)
+
+    verifier_token_facebook()
 
     type_contenu = choisir_type_contenu()
     pilier = choisir_pilier()
