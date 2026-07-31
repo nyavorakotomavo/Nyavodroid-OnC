@@ -60,10 +60,11 @@ GRAPH_API_VERSION = "v25.0"
 STORY_IMAGE_PATH = "story_image.png"
 STORY_WIDTH, STORY_HEIGHT = 1080, 1920
 
-# ✅ Modèle texte corrigé : gemini-2.5-flash-lite (remplace gemini-2.5-flash déprécié)
+# ✅ Modèle texte : gemini-2.5-flash  # ← CORRIGÉ
+# (le "-lite" a été RETIRÉ par Google — ne pas remettre ; commentaire précédent inversé)
 GEMINI_TEXT_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-2.5-flash-lite:generateContent"
+    "models/gemini-2.5-flash:generateContent"
 )
 GEMINI_IMAGE_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image"
@@ -347,7 +348,7 @@ def publier_story(photo_id: str) -> dict:
         resultat = reponse.json()
         if "id" not in resultat:
             raise ValueError(f"Réponse FB inattendue : {resultat}")
-        print("  ✅ Story publiée !")
+        print(f"  ✅ Story publiée !")
         return resultat
     except requests.exceptions.HTTPError as e:
         raise _erreur_facebook(e, "publication story") from e
