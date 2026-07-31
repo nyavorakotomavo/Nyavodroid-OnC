@@ -61,7 +61,7 @@ STORY_IMAGE_PATH = "story_image.png"
 STORY_WIDTH, STORY_HEIGHT = 1080, 1920
 
 # ✅ Modèle texte : gemini-2.5-flash  # ← CORRIGÉ
-# (le "-lite" a été RETIRÉ par Google — ne pas remettre ; commentaire précédent inversé)
+# (le "-lite" a été RETIRÉ par Google — ne pas remettre)
 GEMINI_TEXT_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
     "models/gemini-2.5-flash:generateContent"
@@ -262,6 +262,7 @@ def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
         f"Style : {STYLE_IMAGE_SUFFIX}\n"
         f"L'image doit refléter visuellement le contenu du texte."
     )
+    erreur_gemini: Exception | None = None  # ← CORRIGÉ : on garde une trace de l'erreur Gemini
     try:
         print("  🖼️  Image via Gemini [story]...")
         _image_gemini(prompt, chemin)
@@ -271,6 +272,7 @@ def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
         print(f"  ✅ Image Gemini : {chemin} ({taille:,} octets)")
         return
     except Exception as e:
+        erreur_gemini = e  # ← CORRIGÉ
         print(f"  ⚠️  Gemini image échec : {e}")
 
     try:
@@ -281,7 +283,9 @@ def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
             raise ValueError(f"Image Pollinations suspecte ({taille} octets).")
         print(f"  ✅ Image Pollinations : {chemin} ({taille:,} octets)")
     except Exception as e2:
-        raise RuntimeError(f"Gemini ET Pollinations ont échoué.\nGemini : {e}\nPollinations : {e2}") from e2
+        raise RuntimeError(
+            f"Gemini ET Pollinations ont échoué.\nGemini : {erreur_gemini}\nPollinations : {e2}"  # ← CORRIGÉ : {e} → {erreur_gemini}
+        ) from e2
 
 
 # ──────────────────────────────────────────────
