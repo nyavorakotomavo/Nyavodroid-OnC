@@ -5,7 +5,7 @@ Nyavo Channel — publication multi-formats.
   - 🖼️  Image + Texte  (POST /photos)
   - 🎬 Reel vidéo     (POST /video_reels — storytelling 3 actes)
 
-Texte : Mistral → fallback Gemini [content]
+Texte : Mistral → fallback Gemini [content] (liste de modèles avec fallback auto)
 Images : Gemini Interactions → fallback Pollinations anonyme
 Vidéo : ffmpeg
 
@@ -71,16 +71,23 @@ REEL_VIDEO_PATH = "reel_video.mp4"
 NB_IMAGES_REEL = 3
 DUREE_PAR_IMAGE = 3.5
 AUDIO_PATH = "background_music.mp3"
-STORY_WIDTH, STORY_HEIGHT = 1080, 1920  # ← CORRIGÉ : manquait → NameError sur le Reel
+STORY_WIDTH, STORY_HEIGHT = 1080, 1920
 
 MISTRAL_TEXT_URL = "https://api.mistral.ai/v1/chat/completions"
 
-# ✅ Modèle texte : gemini-2.5-flash  # ← CORRIGÉ
-# (le "-lite" a été RETIRÉ par Google — ne pas remettre)
-GEMINI_TEXT_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-2.5-flash:generateContent"
-)
+# ✅ TEXTE : liste de modèles essayés dans l'ordre (fallback auto si 404/retrait).
+# L'alias "gemini-flash-latest", s'il est dispo, immunise le code à vie.
+# (gemini-2.5-flash ET gemini-2.5-flash-lite sont retirés pour les nouveaux comptes.)
+GEMINI_TEXT_BASE = "https://generativelanguage.googleapis.com/v1beta/models/"
+GEMINI_TEXT_MODELS = [
+    "gemini-flash-latest",
+    "gemini-3-flash",
+    "gemini-3.1-flash",
+    "gemini-3-pro",
+    "gemini-pro-latest",
+    "gemini-2.5-pro",
+]
+
 GEMINI_IMAGE_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image"
 
@@ -265,7 +272,7 @@ def _image_pollinations(prompt: str, chemin: str) -> None:
 
 def generer_image(prompt: str, chemin: str) -> None:
     prompt_propre = _nettoyer_texte(prompt)
-    erreur_gemini: Exception | None = None  # ← CORRIGÉ : on garde une trace de l'erreur Gemini
+    erreur_gemini: Exception | None = None
     try:
         print(f"  🖼️  Image via Gemini...")
         _image_gemini(prompt_propre, chemin)
@@ -275,7 +282,7 @@ def generer_image(prompt: str, chemin: str) -> None:
         print(f"  ✅ Image Gemini : {chemin} ({taille:,} octets)")
         return
     except Exception as e:
-        erreur_gemini = e  # ← CORRIGÉ
+        erreur_gemini = e
         print(f"  ⚠️  Gemini image échec : {e}")
 
     try:
@@ -287,7 +294,7 @@ def generer_image(prompt: str, chemin: str) -> None:
         print(f"  ✅ Image Pollinations : {chemin} ({taille:,} octets)")
     except Exception as e2:
         raise RuntimeError(
-            f"Gemini ET Pollinations ont échoué.\nGemini : {erreur_gemini}\nPollinations : {e2}"  # ← CORRIGÉ : {e} → {erreur_gemini}
+            f"Gemini ET Pollinations ont échoué.\nGemini : {erreur_gemini}\nPollinations : {e2}"
         ) from e2
 
 
@@ -311,7 +318,7 @@ def choisir_pilier() -> str:
 
 
 # ══════════════════════════════════════════════
-#  GÉNÉRATION TEXTE (Mistral → fallback Gemini B)
+#  GÉNÉRATION TEXTE (Mistral → fallback Gemini B multi-modèles)
 # ══════════════════════════════════════════════
 def _texte_mistral(prompt: str) -> str:
     reponse = _requete_avec_retry(
@@ -328,16 +335,26 @@ def _texte_mistral(prompt: str) -> str:
 
 
 def _texte_gemini(prompt: str) -> str:
-    reponse = _requete_avec_retry(
-        "POST", f"{GEMINI_TEXT_URL}?key={GEMINI_API_KEY}",
-        headers={"Content-Type": "application/json"},
-        json_data={
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"maxOutputTokens": 500, "temperature": 0.9},
-        },
-        timeout=30,
-    )
-    return _nettoyer_texte(reponse.json()["candidates"][0]["content"]["parts"][0]["text"])
+    # ← CORRIGÉ : boucle sur la liste de modèles (fallback auto si 404/retrait)
+    derniere_erreur: Exception | None = None
+    for modele in GEMINI_TEXT_MODELS:
+        url = f"{GEMINI_TEXT_BASE}{modele}:generateContent?key={GEMINI_API_KEY}"
+        try:
+            reponse = _requete_avec_retry(
+                "POST", url,
+                headers={"Content-Type": "application/json"},
+                json_data={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"maxOutputTokens": 500, "temperature": 0.9},
+                },
+                timeout=30,
+            )
+            return _nettoyer_texte(reponse.json()["candidates"][0]["content"]["parts"][0]["text"])
+        except Exception as e:
+            derniere_erreur = e
+            print(f"  ⚠️  Gemini texte modèle {modele} échec : {e}")
+            continue
+    raise RuntimeError(f"Texte Gemini impossible (tous modèles KO) : {derniere_erreur}")
 
 
 def generer_texte(prompt: str, contexte: str = "") -> str:
@@ -625,7 +642,7 @@ def _assembler_video(images: list[str], textes: list[str], sortie: str) -> None:
         "-c:v", "libx264", "-preset", "fast", "-crf", "23",
         "-c:a", "aac", "-b:a", "128k",
         "-pix_fmt", "yuv420p",
-        "-t", str(n * DUREE_PAR_IMAGE),  # ← CORRIGÉ : durée fixe (le ternaire -shortest/-t ajoutait un argument orphelin)
+        "-t", str(n * DUREE_PAR_IMAGE),
         "-y", sortie,
     ]
     try:
