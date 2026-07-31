@@ -3,10 +3,10 @@
 Nyavo Channel — publication multi-formats.
   - 📝 Texte seul     (POST /feed)
   - 🖼️  Image + Texte  (POST /photos)
-  - 🎬 Reel vidéo     (POST /video_reels — upload 3 phases)
+  - 🎬 Reel vidéo     (POST /video_reels — storytelling 3 actes)
 
 Texte : Mistral → fallback Gemini [content]
-Images : Gemini Interactions API [content] — gemini-3.1-flash-image
+Images : Gemini Interactions → fallback Pollinations anonyme
 Vidéo : ffmpeg
 
 Projet Gemini : nyavo-content (clé dédiée GEMINI_API_KEY_CONTENT)
@@ -21,6 +21,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.parse
 from datetime import datetime, timezone
 
 import requests
@@ -37,19 +38,16 @@ from content_config import (
 
 
 # ──────────────────────────────────────────────
-# Nettoyage des secrets et textes
+# Nettoyage
 # ──────────────────────────────────────────────
 def _nettoyer_secret(valeur: str) -> str:
-    """Supprime tout caractère non-ASCII d'un secret (clés API, tokens)."""
     return valeur.encode("ascii", "ignore").decode("ascii").strip()
 
 
 def _nettoyer_texte(texte: str) -> str:
-    """Supprime caractères Unicode invisibles + Markdown."""
     texte = re.sub(
         r'[\u200e\u200f\u200b\u200c\u200d\ufeff\u00ad\u2060\u180e\u202a-\u202e\u2066-\u2069]',
-        '',
-        texte,
+        '', texte,
     )
     texte = texte.replace('**', '').replace('*', '')
     texte = ''.join(c for c in texte if c.isprintable() or c in '\n\t')
@@ -70,8 +68,8 @@ MISTRAL_API_KEY = _nettoyer_secret(os.environ.get("MISTRAL_API_KEY", ""))
 GRAPH_API_VERSION = "v25.0"
 IMAGE_PATH = "post_image.png"
 REEL_VIDEO_PATH = "reel_video.mp4"
-NB_IMAGES_REEL = 5
-DUREE_PAR_IMAGE = 2.5
+NB_IMAGES_REEL = 3
+DUREE_PAR_IMAGE = 3.5
 AUDIO_PATH = "background_music.mp3"
 
 MISTRAL_TEXT_URL = "https://api.mistral.ai/v1/chat/completions"
@@ -82,10 +80,52 @@ GEMINI_TEXT_URL = (
 GEMINI_IMAGE_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image"
 
-MAX_RETRIES = 5
-RETRY_DELAY = 20
+POLLINATIONS_IMAGE_URL = "https://image.pollinations.ai/prompt/"
+POLLINATIONS_WIDTH, POLLINATIONS_HEIGHT = 1080, 1920
+
+MAX_RETRIES = 4
+RETRY_DELAY = 30
 TIMEOUT = 60
-DELAY_ENTRE_IMAGES = 15
+DELAY_ENTRE_IMAGES = 30
+
+# ──────────────────────────────────────────────
+# Structure narrative du Reel (storytelling 3 actes)
+# ──────────────────────────────────────────────
+STRUCTURE_REEL = [
+    {
+        "acte": "ACCROCHE",
+        "role": "Scène d'ouverture — capte l'attention immédiatement",
+        "ambiance": "calme, mystérieuse, contemplative",
+        "consigne_texte": "Une phrase d'accroche qui pose le décor ou une question",
+        "consigne_image": (
+            "Plan large, ambiance calme et mystérieuse, "
+            "le sujet est vu de loin ou partiellement caché, "
+            "atmosphère contemplative, lumière douce"
+        ),
+    },
+    {
+        "acte": "TENSION",
+        "role": "Développement — crée la surprise ou la tension",
+        "ambiance": "dynamique, intense, inattendue",
+        "consigne_texte": "Un fait surprenant, un chiffre choc ou une révélation",
+        "consigne_image": (
+            "Plan rapproché, ambiance dynamique et intense, "
+            "le sujet est au centre de l'action, "
+            "éléments visuels percutants, contraste élevé"
+        ),
+    },
+    {
+        "acte": "RÉVÉLATION",
+        "role": "Chute — la révélation finale qui marque l'esprit",
+        "ambiance": "épique, lumineuse, mémorable",
+        "consigne_texte": "La chute, la prédiction ou le message final percutant",
+        "consigne_image": (
+            "Plan final épique, ambiance lumineuse et mémorable, "
+            "le sujet est révélé dans toute sa puissance, "
+            "effet dramatique, lumière néon intense"
+        ),
+    },
+]
 
 
 # ══════════════════════════════════════════════
@@ -95,19 +135,22 @@ def _requete_avec_retry(
     methode: str, url: str, *,
     headers: dict | None = None, json_data: dict | None = None,
     data: dict | None = None, files: dict | None = None,
-    timeout: int = TIMEOUT,
+    timeout: int = TIMEOUT, stream: bool = False,
 ) -> requests.Response:
     derniere_erreur: Exception | None = None
     for tentative in range(1, MAX_RETRIES + 1):
         try:
             reponse = requests.request(
                 method=methode, url=url, headers=headers,
-                json=json_data, data=data, files=files, timeout=timeout,
+                json=json_data, data=data, files=files,
+                timeout=timeout, stream=stream,
             )
             if reponse.status_code == 429 or reponse.status_code >= 500:
                 attente = RETRY_DELAY * tentative
                 print(f"  ⚠️  HTTP {reponse.status_code} — retry dans {attente}s ({tentative}/{MAX_RETRIES})")
-                derniere_erreur = requests.exceptions.HTTPError(f"HTTP {reponse.status_code}", response=reponse)
+                derniere_erreur = requests.exceptions.HTTPError(
+                    f"HTTP {reponse.status_code}", response=reponse
+                )
                 time.sleep(attente)
                 continue
             reponse.raise_for_status()
@@ -160,6 +203,71 @@ def _extraire_image_base64(resultat: dict) -> str:
             if "inline_data" in part:
                 return part["inline_data"]["data"]
     raise ValueError(f"Impossible d'extraire l'image. Clés : {list(resultat.keys())}")
+
+
+# ══════════════════════════════════════════════
+#  GÉNÉRATION IMAGE : Gemini → fallback Pollinations
+# ══════════════════════════════════════════════
+def _image_gemini(prompt: str, chemin: str) -> None:
+    reponse = _requete_avec_retry(
+        "POST", GEMINI_IMAGE_URL,
+        headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
+        json_data={
+            "model": GEMINI_IMAGE_MODEL,
+            "input": [{"type": "text", "text": prompt}],
+            "response_format": {"type": "image", "aspect_ratio": "9:16", "image_size": "1K"},
+        },
+        timeout=120,
+    )
+    image_b64 = _extraire_image_base64(reponse.json())
+    with open(chemin, "wb") as f:
+        f.write(base64.b64decode(image_b64))
+
+
+def _image_pollinations(prompt: str, chemin: str) -> None:
+    encoded = urllib.parse.quote(prompt)
+    url = (
+        f"{POLLINATIONS_IMAGE_URL}{encoded}"
+        f"?width={POLLINATIONS_WIDTH}&height={POLLINATIONS_HEIGHT}&nologo=true"
+    )
+    reponse = _requete_avec_retry(
+        "GET", url,
+        headers={"User-Agent": "NyavoChannel/1.0"},
+        timeout=120,
+        stream=True,
+    )
+    with open(chemin, "wb") as f:
+        for chunk in reponse.iter_content(chunk_size=8192):
+            f.write(chunk)
+
+
+def generer_image(prompt: str, chemin: str) -> None:
+    """Génère une image 9:16 : Gemini d'abord, Pollinations en fallback."""
+    prompt_propre = _nettoyer_texte(prompt)
+
+    try:
+        print(f"  🖼️  Image via Gemini...")
+        _image_gemini(prompt_propre, chemin)
+        taille = os.path.getsize(chemin)
+        if taille < 1024:
+            raise ValueError(f"Image suspecte ({taille} octets)")
+        print(f"  ✅ Image Gemini : {chemin} ({taille:,} octets)")
+        return
+    except Exception as e:
+        print(f"  ⚠️  Gemini image échec : {e}")
+
+    try:
+        print(f"  🖼️  Fallback image via Pollinations...")
+        _image_pollinations(prompt_propre, chemin)
+        taille = os.path.getsize(chemin)
+        if taille < 1024:
+            raise ValueError(f"Image Pollinations suspecte ({taille} octets)")
+        print(f"  ✅ Image Pollinations : {chemin} ({taille:,} octets)")
+    except Exception as e2:
+        raise RuntimeError(
+            f"Gemini ET Pollinations ont échoué.\n"
+            f"Gemini : {e}\nPollinations : {e2}"
+        ) from e2
 
 
 # ══════════════════════════════════════════════
@@ -226,30 +334,6 @@ def generer_texte(prompt: str, contexte: str = "") -> str:
 
 
 # ══════════════════════════════════════════════
-#  GÉNÉRATION IMAGE (Gemini Interactions API)
-# ══════════════════════════════════════════════
-def generer_image(prompt: str, chemin: str) -> None:
-    prompt_propre = _nettoyer_texte(prompt)
-    reponse = _requete_avec_retry(
-        "POST", GEMINI_IMAGE_URL,
-        headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
-        json_data={
-            "model": GEMINI_IMAGE_MODEL,
-            "input": [{"type": "text", "text": prompt_propre}],
-            "response_format": {"type": "image", "aspect_ratio": "9:16", "image_size": "1K"},
-        },
-        timeout=120,
-    )
-    image_b64 = _extraire_image_base64(reponse.json())
-    with open(chemin, "wb") as f:
-        f.write(base64.b64decode(image_b64))
-    taille = os.path.getsize(chemin)
-    if taille < 1024:
-        raise ValueError(f"Image suspecte ({taille} octets)")
-    print(f"  ✅ Image : {chemin} ({taille:,} octets)")
-
-
-# ══════════════════════════════════════════════
 #  FORMAT 1 : TEXTE SEUL
 # ══════════════════════════════════════════════
 def publier_texte_seul(pilier: str) -> dict:
@@ -259,8 +343,7 @@ def publier_texte_seul(pilier: str) -> dict:
         f"Tu es Nyavo Channel, une chaîne tech qui révèle les mécanismes "
         f"cachés du monde numérique.\n\n"
         f"Axe éditorial : {PILLARS[pilier]['label']}\n"
-        f"Sujet imposé : {sujet}\n"
-        f"Format : {style}\n\n"
+        f"Sujet imposé : {sujet}\nFormat : {style}\n\n"
         f"Consignes :\n"
         f"- Écris un post Facebook de 3-5 lignes en français\n"
         f"- Ton : {TON_EDITORIAL}\n"
@@ -333,26 +416,50 @@ def publier_image_texte(pilier: str) -> dict:
 
 
 # ══════════════════════════════════════════════
-#  FORMAT 3 : REEL VIDÉO
+#  FORMAT 3 : REEL VIDÉO — STORYTELLING 3 ACTES
 # ══════════════════════════════════════════════
 def _generer_phrases_reel(pilier: str) -> tuple[str, list[str]]:
+    """
+    Génère une mini-histoire en 3 actes pour le Reel.
+    Retourne (sujet, [phrase_acte1, phrase_acte2, phrase_acte3]).
+    """
     label = PILLARS[pilier]["label"]
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
-    style = random.choice(STORY_PROMPTS)
+
+    # Construire la description des 3 actes pour le prompt
+    actes_desc = ""
+    for i, acte in enumerate(STRUCTURE_REEL, 1):
+        actes_desc += (
+            f"Acte {i} — {acte['acte']} : {acte['role']}\n"
+            f"  → {acte['consigne_texte']}\n"
+        )
+
     prompt = (
-        f"Tu es Nyavo Channel, une chaîne tech immersive.\n\n"
-        f"Axe : {label}\nSujet imposé : {sujet}\nFormat : {style}\n\n"
+        f"Tu es Nyavo Channel, une chaîne tech immersive spécialisée dans le "
+        f"storytelling technologique.\n\n"
+        f"Axe : {label}\n"
+        f"Sujet imposé : {sujet}\n\n"
+        f"MISSION : Raconte une MINI-HISTOIRE en exactement {NB_IMAGES_REEL} actes.\n"
+        f"Les {NB_IMAGES_REEL} phrases doivent former une narration cohérente "
+        f"avec une progression dramatique, PAS des faits isolés.\n\n"
+        f"Structure narrative :\n{actes_desc}\n"
         f"Consignes :\n"
-        f"- Génère exactement {NB_IMAGES_REEL} phrases très courtes (moins de 8 mots chacune)\n"
+        f"- Chaque phrase : moins de 10 mots\n"
         f"- Numérotées de 1 à {NB_IMAGES_REEL}, une par ligne\n"
         f"- Ton : {TON_EDITORIAL}\n"
-        f"- Chaque phrase = un fait/chiffre/question percutant\n"
-        f"- Progression : accroche → développement → révélation\n"
-        f"- PAS de Markdown, PAS d'astérisques, PAS de caractères spéciaux\n"
-        f"- Interdit : généralités, hors-sujet\n"
-        f"Format :\n1. Phrase une\n2. Phrase deux\n..."
+        f"- Les 3 phrases doivent se suivre comme une histoire : "
+        f"début → tension → chute\n"
+        f"- Le lecteur doit avoir envie de voir la scène suivante\n"
+        f"- PAS de Markdown, PAS d'astérisques\n"
+        f"- Interdit : faits isolés sans lien, généralités, hors-sujet\n\n"
+        f"Exemple de structure (ne pas copier, juste le format) :\n"
+        f"1. [Accroche] En 2024, un serveur a disparu sans trace\n"
+        f"2. [Tension] 48h plus tard, 3 millions de comptes étaient vides\n"
+        f"3. [Révélation] Le coupable ? Une seule ligne de code\n\n"
+        f"Format :\n1. Phrase une\n2. Phrase deux\n3. Phrase trois"
     )
-    texte_brut = generer_texte(prompt, f"(Reel : {sujet})")
+
+    texte_brut = generer_texte(prompt, f"(Reel storytelling : {sujet})")
 
     phrases = []
     for ligne in texte_brut.split("\n"):
@@ -363,32 +470,65 @@ def _generer_phrases_reel(pilier: str) -> tuple[str, list[str]]:
                 phrases.append(phrase)
 
     if len(phrases) < NB_IMAGES_REEL:
-        raise ValueError(f"Phrases insuffisantes ({len(phrases)}/{NB_IMAGES_REEL}) : {texte_brut}")
+        raise ValueError(
+            f"Phrases insuffisantes ({len(phrases)}/{NB_IMAGES_REEL}) : {texte_brut}"
+        )
     return sujet, phrases[:NB_IMAGES_REEL]
 
 
-def _generer_images_reel(pilier: str, phrases: list[str]) -> list[str]:
+def _generer_images_reel(pilier: str, phrases: list[str], sujet: str) -> list[str]:
+    """
+    Génère les 3 images du Reel avec continuité narrative.
+    Chaque image est une scène qui suit la précédente.
+    """
     label = PILLARS[pilier]["label"]
     chemins = []
-    for i, phrase in enumerate(phrases, 1):
+
+    for i, (phrase, acte) in enumerate(zip(phrases, STRUCTURE_REEL), 1):
         chemin = f"reel_img_{i}.png"
-        prompt = (
-            f"Illustration verticale 9:16, scène {i}/{NB_IMAGES_REEL}.\n"
-            f"Texte de la scène : {phrase}\n"
-            f"Axe : {label}\nStyle : {STYLE_IMAGE_SUFFIX}\n"
-            f"L'image doit illustrer visuellement cette phrase précise."
-        )
+
+        # Contexte narratif pour la cohérence visuelle
+        contexte_narratif = ""
         if i > 1:
-            pause = DELAY_ENTRE_IMAGES + random.uniform(0, 5)
+            contexte_narratif += f"Scène précédente : « {phrases[i-2]} »\n"
+        if i < len(phrases):
+            contexte_narratif += f"Scène suivante : « {phrases[i]} »\n"
+
+        prompt = (
+            f"Scène {i}/{NB_IMAGES_REEL} d'une mini-histoire visuelle en 3 actes.\n"
+            f"Sujet global : {sujet}\n"
+            f"Axe : {label}\n\n"
+            f"ACTE {i} — {acte['acte']} : {acte['role']}\n"
+            f"Texte de cette scène : « {phrase} »\n"
+            f"Ambiance : {acte['ambiance']}\n"
+            f"Cadrage : {acte['consigne_image']}\n\n"
+        )
+
+        if contexte_narratif:
+            prompt += f"Continuité narrative :\n{contexte_narratif}\n"
+
+        prompt += (
+            f"Style : {STYLE_IMAGE_SUFFIX}\n"
+            f"IMPORTANT : Cette image doit être visuellement cohérente avec "
+            f"les autres scènes de l'histoire. Même univers, même palette "
+            f"de couleurs, même ambiance générale. La progression visuelle "
+            f"doit refléter la progression narrative."
+        )
+
+        if i > 1:
+            pause = DELAY_ENTRE_IMAGES + random.uniform(0, 10)
             print(f"  ⏳ Pause anti-rate-limit : {pause:.0f}s...")
             time.sleep(pause)
-        print(f"  🖼️  Image Reel {i}/{NB_IMAGES_REEL}...")
+
+        print(f"  🖼️  Scène {i}/{NB_IMAGES_REEL} [{acte['acte']}]...")
         generer_image(prompt, chemin)
         chemins.append(chemin)
+
     return chemins
 
 
 def _assembler_video(images: list[str], textes: list[str], sortie: str) -> None:
+    """Assemble les 3 scènes en vidéo avec texte animé et transitions."""
     audio_existe = os.path.exists(AUDIO_PATH)
     if not audio_existe:
         print(f"  ⚠️  '{AUDIO_PATH}' absent → vidéo sans son.")
@@ -400,27 +540,64 @@ def _assembler_video(images: list[str], textes: list[str], sortie: str) -> None:
         inputs += ["-i", AUDIO_PATH]
 
     n = len(images)
-    concat = "".join(f"[{i}:v]" for i in range(n))
-    filtres = [f"{concat}concat=n={n}:v=1:a=0[slideshow]"]
 
+    # Concaténation avec transitions fondu entre les scènes
+    # Chaque scène a un fade in/out de 0.5s pour la fluidité narrative
+    filtres = []
+
+    # Appliquer un léger zoom progressif sur chaque scène (effet Ken Burns)
+    for i in range(n):
+        t0 = 0
+        t1 = DUREE_PAR_IMAGE
+        # Zoom lent de 100% à 108% sur la durée de la scène
+        filtres.append(
+            f"[{i}:v]scale={STORY_WIDTH}:{STORY_HEIGHT}:force_original_aspect_ratio=increase,"
+            f"crop={STORY_WIDTH}:{STORY_HEIGHT},"
+            f"zoompan=z='min(zoom+0.0008,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+            f":d={int(DUREE_PAR_IMAGE * 25)}:s={STORY_WIDTH}x{STORY_HEIGHT}:fps=25,"
+            f"fade=t=in:st=0:d=0.5,fade=t=out:st={DUREE_PAR_IMAGE - 0.5}:d=0.5"
+            f"[scene{i}]"
+        )
+
+    # Concaténer les scènes
+    concat_inputs = "".join(f"[scene{i}]" for i in range(n))
+    filtres.append(f"{concat_inputs}concat=n={n}:v=1:a=0[slideshow]")
+
+    # Texte animé par scène avec indicateur d'acte
     txt_chain = "[slideshow]"
-    for i, texte in enumerate(textes):
+    for i, (texte, acte) in enumerate(zip(textes, STRUCTURE_REEL)):
         t_esc = texte.replace("'", "\\'").replace(":", "\\:").replace("%", "%%")
         t0 = i * DUREE_PAR_IMAGE
         t1 = (i + 1) * DUREE_PAR_IMAGE
+
+        # Fade in/out du texte
         alpha = (
-            f"if(lt(t-{t0},0.5),min((t-{t0})/0.5,1),"
-            f"if(gt(t,{t1}-0.5),max(1-({t1}-t)/0.5,0),1))"
+            f"if(lt(t-{t0},0.6),min((t-{t0})/0.6,1),"
+            f"if(gt(t,{t1}-0.6),max(1-({t1}-t)/0.6,0),1))"
         )
+
+        # Texte principal (phrase de la scène)
         txt_chain += (
             f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-            f"text='{t_esc}':fontcolor=0x00E5FF:fontsize=58:"
-            f"x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=0x0D0D0D@0.7:"
-            f"boxborderw=30:alpha='{alpha}':"
-            f"enable='between(t,{t0},{t1})'"
+            f"text='{t_esc}':fontcolor=0x00E5FF:fontsize=56:"
+            f"x=(w-text_w)/2:y=h*0.78:box=1:boxcolor=0x0D0D0D@0.75:boxborderw=28:"
+            f"alpha='{alpha}':"
+            f"enable='between(t,{t0 + 0.3},{t1 - 0.3})'"
         )
+
+        # Petit indicateur d'acte en haut (ex: "1/3 — ACCROCHE")
+        acte_label = f"{i + 1}/{NB_IMAGES_REEL}"
+        txt_chain += (
+            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
+            f"text='{acte_label}':fontcolor=0x00E5FF@0.5:fontsize=28:"
+            f"x=(w-text_w)/2:y=60:"
+            f"alpha='{alpha}':"
+            f"enable='between(t,{t0 + 0.3},{t1 - 0.3})'"
+        )
+
     filtres.append(txt_chain + "[final]")
 
+    # Mapping
     map_args = ["-map", "[final]"]
     if audio_existe:
         map_args += ["-map", f"{n}:a"]
@@ -436,7 +613,7 @@ def _assembler_video(images: list[str], textes: list[str], sortie: str) -> None:
         "-y", sortie,
     ]
     try:
-        print("  🎬 Assemblage vidéo ffmpeg...")
+        print("  🎬 Assemblage vidéo ffmpeg (storytelling 3 actes)...")
         subprocess.run(cmd, check=True, capture_output=True, text=True)
         taille = os.path.getsize(sortie)
         print(f"  ✅ Vidéo : {sortie} ({taille:,} octets)")
@@ -447,14 +624,16 @@ def _assembler_video(images: list[str], textes: list[str], sortie: str) -> None:
 
 
 def publier_reel(pilier: str) -> dict:
+    """Publie un Reel vidéo storytelling 3 actes."""
     sujet, phrases = _generer_phrases_reel(pilier)
+
     print(f"\n📌 Axe   : {PILLARS[pilier]['label']}")
     print(f"📌 Sujet : {sujet}")
-    print(f"📌 Phrases Reel :")
-    for i, p in enumerate(phrases, 1):
-        print(f"   {i}. {p}")
+    print(f"📌 Storytelling Reel ({NB_IMAGES_REEL} actes) :")
+    for i, (p, acte) in enumerate(zip(phrases, STRUCTURE_REEL), 1):
+        print(f"   {i}. [{acte['acte']}] {p}")
 
-    images = _generer_images_reel(pilier, phrases)
+    images = _generer_images_reel(pilier, phrases, sujet)
     _assembler_video(images, phrases, REEL_VIDEO_PATH)
 
     endpoint = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{FB_PAGE_ID}/video_reels"
