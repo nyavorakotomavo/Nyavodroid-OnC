@@ -2,6 +2,7 @@
 """
 Nyavo Channel — publication STORY (image courte, texte minimal).
 Projet Gemini : nyavo-story (clé dédiée GEMINI_API_KEY_STORY)
+Texte : Gemini [story] (liste de modèles avec fallback auto)
 Fallback image : Pollinations anonyme (si Gemini 429)
 Secrets requis : FB_PAGE_ID, FB_PAGE_ACCESS_TOKEN, GEMINI_API_KEY_STORY
 Dépendances : requests>=2.31.0 | ffmpeg + fonts-dejavu-core
@@ -60,12 +61,19 @@ GRAPH_API_VERSION = "v25.0"
 STORY_IMAGE_PATH = "story_image.png"
 STORY_WIDTH, STORY_HEIGHT = 1080, 1920
 
-# ✅ Modèle texte : gemini-2.5-flash  # ← CORRIGÉ
-# (le "-lite" a été RETIRÉ par Google — ne pas remettre)
-GEMINI_TEXT_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-2.5-flash:generateContent"
-)
+# ✅ TEXTE : liste de modèles essayés dans l'ordre (fallback auto si 404/retrait).
+# L'alias "gemini-flash-latest", s'il est dispo, immunise le code à vie.
+# (gemini-2.5-flash ET gemini-2.5-flash-lite sont retirés pour les nouveaux comptes.)
+GEMINI_TEXT_BASE = "https://generativelanguage.googleapis.com/v1beta/models/"
+GEMINI_TEXT_MODELS = [
+    "gemini-flash-latest",
+    "gemini-3-flash",
+    "gemini-3.1-flash",
+    "gemini-3-pro",
+    "gemini-pro-latest",
+    "gemini-2.5-pro",
+]
+
 GEMINI_IMAGE_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image"
 
@@ -176,7 +184,7 @@ def verifier_token_facebook() -> None:
 
 
 # ──────────────────────────────────────────────
-# Génération du texte (Gemini)
+# Génération du texte (Gemini multi-modèles avec fallback auto)
 # ──────────────────────────────────────────────
 def generer_texte_story() -> tuple[str, str, str]:
     pilier = random.choices(PILLAR_KEYS, weights=[PILLAR_WEIGHTS[k] for k in PILLAR_KEYS], k=1)[0]
@@ -197,31 +205,36 @@ def generer_texte_story() -> tuple[str, str, str]:
         f"- Interdit : généralités, banalités, hors-sujet\n"
     )
 
-    try:
-        print(f"  📝 Texte via Gemini [story]...")
-        print(f"     Axe   : {PILLARS[pilier]['label']}")
-        print(f"     Sujet : {sujet}")
-        reponse = _requete_avec_retry(
-            "POST", f"{GEMINI_TEXT_URL}?key={GEMINI_API_KEY}",
-            headers={"Content-Type": "application/json"},
-            json_data={
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"maxOutputTokens": 50, "temperature": 0.9},
-            },
-            timeout=30,
-        )
-        texte = reponse.json()["candidates"][0]["content"]["parts"][0]["text"].strip().strip('"').split("\n")[0]
-        texte = _nettoyer_texte(texte)
-        if not texte:
-            raise ValueError("Réponse texte vide.")
-        print(f"  ✅ Texte : « {texte} »")
-        return pilier, sujet, texte
-    except requests.exceptions.HTTPError as e:
-        code = e.response.status_code if e.response is not None else "N/A"
-        corps = e.response.text[:400] if e.response is not None else ""
-        raise RuntimeError(f"Gemini texte [story] (HTTP {code}) : {corps}") from e
-    except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Gemini texte [story] injoignable : {e}") from e
+    print(f"  📝 Texte via Gemini [story]...")
+    print(f"     Axe   : {PILLARS[pilier]['label']}")
+    print(f"     Sujet : {sujet}")
+
+    # ← CORRIGÉ : boucle sur la liste de modèles (fallback auto si 404/retrait)
+    derniere_erreur: Exception | None = None
+    for modele in GEMINI_TEXT_MODELS:
+        url = f"{GEMINI_TEXT_BASE}{modele}:generateContent?key={GEMINI_API_KEY}"
+        try:
+            reponse = _requete_avec_retry(
+                "POST", url,
+                headers={"Content-Type": "application/json"},
+                json_data={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"maxOutputTokens": 50, "temperature": 0.9},
+                },
+                timeout=30,
+            )
+            texte = reponse.json()["candidates"][0]["content"]["parts"][0]["text"].strip().strip('"').split("\n")[0]
+            texte = _nettoyer_texte(texte)
+            if not texte:
+                raise ValueError("Réponse texte vide.")
+            print(f"  ✅ Texte (modèle {modele}) : « {texte} »")
+            return pilier, sujet, texte
+        except Exception as e:
+            derniere_erreur = e
+            print(f"  ⚠️  Modèle {modele} échec : {e}")
+            continue
+
+    raise RuntimeError(f"Gemini texte [story] impossible (tous modèles KO) : {derniere_erreur}")
 
 
 # ──────────────────────────────────────────────
@@ -262,7 +275,7 @@ def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
         f"Style : {STYLE_IMAGE_SUFFIX}\n"
         f"L'image doit refléter visuellement le contenu du texte."
     )
-    erreur_gemini: Exception | None = None  # ← CORRIGÉ : on garde une trace de l'erreur Gemini
+    erreur_gemini: Exception | None = None
     try:
         print("  🖼️  Image via Gemini [story]...")
         _image_gemini(prompt, chemin)
@@ -272,7 +285,7 @@ def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
         print(f"  ✅ Image Gemini : {chemin} ({taille:,} octets)")
         return
     except Exception as e:
-        erreur_gemini = e  # ← CORRIGÉ
+        erreur_gemini = e
         print(f"  ⚠️  Gemini image échec : {e}")
 
     try:
@@ -284,7 +297,7 @@ def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
         print(f"  ✅ Image Pollinations : {chemin} ({taille:,} octets)")
     except Exception as e2:
         raise RuntimeError(
-            f"Gemini ET Pollinations ont échoué.\nGemini : {erreur_gemini}\nPollinations : {e2}"  # ← CORRIGÉ : {e} → {erreur_gemini}
+            f"Gemini ET Pollinations ont échoué.\nGemini : {erreur_gemini}\nPollinations : {e2}"
         ) from e2
 
 
