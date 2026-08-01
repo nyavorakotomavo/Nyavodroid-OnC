@@ -3,7 +3,8 @@
 Nyavodroid — STORY (image courte + texte minimal).
 Logique métier uniquement ; texte/image viennent de nyavo_media.
 Secrets : FB_PAGE_ID, FB_PAGE_ACCESS_TOKEN, GEMINI_API_KEY_STORY,
-          MISTRAL_API_KEY, TOGETHER_API_KEY, HF_TOKEN
+          MISTRAL_API_KEY, TOGETHER_API_KEY, HF_TOKEN, FAL_API_KEY,
+          CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN
 """
 
 import os
@@ -23,7 +24,7 @@ GEMINI_API_KEY = M.clean(os.environ["GEMINI_API_KEY_STORY"])
 STORY_IMAGE_PATH = "story_image.png"
 STORY_WIDTH, STORY_HEIGHT = 1080, 1920
 
-# ────────────── Nouvelle fonction utilitaire ──────────────
+
 def get_image_dimensions(filepath: str) -> tuple[int, int]:
     """Retourne (largeur, hauteur) d'une image via ffprobe."""
     cmd = [
@@ -36,7 +37,8 @@ def get_image_dimensions(filepath: str) -> tuple[int, int]:
     w, h = out.stdout.strip().split(",")
     return int(w), int(h)
 
-def wrap_text(text: str, max_chars: int = 30) -> str:
+
+def wrap_text(text: str, max_chars: int = 26) -> str:
     """Découpe le texte en plusieurs lignes si trop long (au mot près)."""
     words = text.split()
     lines = []
@@ -50,9 +52,8 @@ def wrap_text(text: str, max_chars: int = 30) -> str:
             current_line = word
     if current_line:
         lines.append(current_line)
-    # Si une seule ligne mais très longue, on peut couper sans casser les mots
+    # Si une seule ligne mais très longue, on coupe
     if len(lines) == 1 and len(lines[0]) > max_chars:
-        # On force un découpage approximatif
         s = lines[0]
         lines = [s[i:i+max_chars] for i in range(0, len(s), max_chars)]
     return "\n".join(lines)
@@ -65,7 +66,8 @@ def generer_texte_story():
     prompt = (
         "Tu es Nyavodroid, la page tech qui révèle les mécanismes cachés du monde numérique.\n\n"
         f"Axe éditorial : {PILLARS[pilier]['label']}\nSujet imposé : {sujet}\nFormat : {style}\n\n"
-        f"Consignes : UNE seule phrase en français (< 15 mots) ; ton {TON_EDITORIAL} ; "
+        "Consignes : UNE seule phrase en français (< 15 mots), commence OBLIGATOIREMENT par un emoji "
+        "pertinent suivi d'un espace ; ton " + TON_EDITORIAL + " ; "
         "au moins un terme technique précis ; pas de guillemets, pas de titre, pas de Markdown ; "
         "interdit : généralités, banalités, hors-sujet."
     )
@@ -75,6 +77,10 @@ def generer_texte_story():
     texte = M.clean_text(texte)
     if not texte:
         raise ValueError("Réponse texte vide.")
+    # Ajouter un emoji si le LLM n'en a pas mis
+    if not any(ord(c) > 127 for c in texte[:3]):
+        emojis = ["💡", "🔍", "⚡", "🧠", "🤖", "🛡️", "🌐", "🔐", "💻", "🚀", "📡", "🧬"]
+        texte = random.choice(emojis) + " " + texte
     print(f"  ✅ Texte : « {texte} »")
     return pilier, sujet, texte
 
@@ -84,61 +90,69 @@ def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
         f"Illustration verticale 9:16 pour ce texte : {texte}\n"
         f"Axe : {PILLARS[pilier]['label']}\nStyle : {STYLE_IMAGE_SUFFIX}\n"
         f"L'image doit refléter visuellement le contenu du texte.")
-    M.image_avec_fallback(prompt, GEMINI_API_KEY, chemin,size=(1080,1920))
+    M.image_avec_fallback(prompt, GEMINI_API_KEY, chemin, size=(1080, 1920))
 
 
 def incruster_texte(image_in: str, texte: str, image_out: str) -> None:
-    # ─── 1. Adapter le texte : wrapping + police adaptative ───
-    lignes = wrap_text(texte, max_chars=32)
+    # ─── 1. Wrapping + taille adaptative ───
+    lignes = wrap_text(texte, max_chars=26)
     nb_lignes = lignes.count("\n") + 1
-    # Taille de police selon la longueur
     if nb_lignes == 1:
-        fontsize = 58
+        fontsize = 50
     elif nb_lignes == 2:
-        fontsize = 52
+        fontsize = 44
     else:
-        fontsize = 44  # pour 3+ lignes, on réduit
+        fontsize = 38
 
-    texte_esc = lignes.replace("'", "\\'").replace(":", "\\:").replace("%", "%%")
+    texte_esc = lignes.replace("'", "\\'").replace(":", "\\:").replace("%", "%%").replace("\\", "\\\\")
 
-    # ─── 2. Gestion du redimensionnement anti‑spaghetti ───
+    # ─── 2. Gestion du ratio (anti-spaghetti) ───
     try:
         w_orig, h_orig = get_image_dimensions(image_in)
         ratio_orig = w_orig / h_orig
-        ratio_cible = STORY_WIDTH / STORY_HEIGHT  # 9:16 = 0.5625
-        # Si l'écart est > 5%, on utilise decrease + pad (pas de déformation)
+        ratio_cible = STORY_WIDTH / STORY_HEIGHT
         if abs(ratio_orig - ratio_cible) > 0.05:
             scale_filter = (
                 f"scale={STORY_WIDTH}:{STORY_HEIGHT}:force_original_aspect_ratio=decrease,"
                 f"pad={STORY_WIDTH}:{STORY_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
             )
         else:
-            # Ratio proche → on remplit par zoom/crop (pas de barres noires)
             scale_filter = (
                 f"scale={STORY_WIDTH}:{STORY_HEIGHT}:force_original_aspect_ratio=increase,"
                 f"crop={STORY_WIDTH}:{STORY_HEIGHT}"
             )
-    except (subprocess.CalledProcessError, FileNotFoundError, ValueError) as e:
-        # ffprobe absent, image illisible, ou sortie inattendue (parsing w,h) :
-        # on retombe sur le comportement précédent (increase + crop) sans planter.
-        print(f"  ⚠️  ffprobe indisponible ou échec ({type(e).__name__}: {e}) — fallback increase+crop.")
+    except Exception:
         scale_filter = (
             f"scale={STORY_WIDTH}:{STORY_HEIGHT}:force_original_aspect_ratio=increase,"
             f"crop={STORY_WIDTH}:{STORY_HEIGHT}"
         )
 
-    # ─── 3. Filtre drawtext avec le texte multiligne ───
-    drawtext_filter = (
-        f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-        f"text='{texte_esc}':fontcolor=0x00E5FF:fontsize={fontsize}:"
-        f"x=(w-text_w)/2:y=(h-text_h)/2:"
-        f"box=1:boxcolor=0x0D0D0D@0.7:boxborderw=30:line_spacing=14"
+    # ─── 3. Design : trait néon décoratif + texte dans le tiers inférieur ───
+    y_pos = "h*0.65"           # position verticale du texte (tiers inférieur)
+    trait_y = "h*0.63"         # trait juste au-dessus du texte
+    trait_w = "w*0.25"         # largeur du trait (25% de l'image)
+    trait_x = f"(w-{trait_w})/2"
+
+    # Trait principal + petites barres décoratives aux extrémités
+    trait = (
+        f"drawbox=x={trait_x}:y={trait_y}:w={trait_w}:h=3:color=0x00E5FF@0.8:t=fill,"
+        f"drawbox=x={trait_x}-24:y={trait_y}:w=8:h=3:color=0x00E5FF@0.5:t=fill,"
+        f"drawbox=x={trait_x}+{trait_w}+16:y={trait_y}:w=8:h=3:color=0x00E5FF@0.5:t=fill"
     )
 
-    filtre = f"{scale_filter},{drawtext_filter}"
+    # Texte avec box, ombre portée
+    texte_filtre = (
+        f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+        f"text='{texte_esc}':fontcolor=0xFFFFFF:fontsize={fontsize}:"
+        f"x=(w-text_w)/2:y={y_pos}:"
+        f"box=1:boxcolor=0x0D0D0D@0.75:boxborderw=36:line_spacing=14:"
+        f"shadowcolor=0x00E5FF@0.25:shadowx=0:shadowy=4"
+    )
+
+    filtre = f"{scale_filter},{trait},{texte_filtre}"
 
     try:
-        print("  🎨 Incrustation texte via ffmpeg...")
+        print("  🎨 Incrustation texte + design via ffmpeg...")
         subprocess.run(
             ["ffmpeg", "-i", image_in, "-vf", filtre, "-frames:v", "1", "-y", image_out],
             check=True, capture_output=True, text=True
