@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Nyavo Channel — module média partagé (texte + image + audio).
+Nyavodroid — module média partagé (texte + image + audio).
 Chaînes de fallback robustes, zéro duplication entre post_content / post_story.
 
   TEXTE : Mistral → Together (Mixtral) → Gemini (multi-modèles) → Hugging Face
@@ -69,9 +69,9 @@ GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image"
 REPLICATE_AUDIO_MODEL = "meta/musicgen"
 HF_AUDIO_MODEL = "facebook/musicgen-small"
 
-# Dimensions
-IMG_W, IMG_H = 1024, 1792          # 9:16 pour Together / HF (multiples de 16)
-POLL_W, POLL_H = 1080, 1920        # Pollinations
+# Dimensions par défaut (pour posts classiques)
+DEFAULT_IMG_SIZE = (1024, 1792)       # 9:16
+POLL_W, POLL_H = 1080, 1920          # Pollinations (taille fixe pour la qualité)
 AUDIO_SECONDS = 11
 
 # Modèles texte Gemini essayés dans l'ordre (ceux qui EXISTENT ; les 429 basculent vite)
@@ -263,7 +263,7 @@ def texte_avec_fallback(prompt: str, gemini_key: str, tag: str = "") -> str:
 
 
 # ══════════════════════════════════════════════
-#  IMAGE — fournisseurs
+#  IMAGE — fournisseurs (avec paramètre de taille)
 # ══════════════════════════════════════════════
 def _extract_b64(res: dict) -> str:
     if "output_image" in res:
@@ -290,7 +290,9 @@ def _extract_b64(res: dict) -> str:
     raise ValueError(f"image Gemini introuvable. Clés : {list(res.keys())}")
 
 
-def _i_gemini(prompt: str, chemin: str, gemini_key: str) -> None:
+def _i_gemini(prompt: str, chemin: str, gemini_key: str, size: tuple[int, int]) -> None:
+    # Gemini ne prend pas de dimensions exactes, mais on peut indiquer "1K" et aspect 9:16
+    # pour garantir 1024x1792. On utilisera toujours le même format, peu importe size car size standard.
     r = _req(
         "POST", GEMINI_IMAGE_URL,
         headers={"x-goog-api-key": gemini_key, "Content-Type": "application/json"},
@@ -304,11 +306,12 @@ def _i_gemini(prompt: str, chemin: str, gemini_key: str) -> None:
         f.write(base64.b64decode(b64))
 
 
-def _i_hf(prompt: str, chemin: str) -> None:
+def _i_hf(prompt: str, chemin: str, size: tuple[int, int]) -> None:
+    w, h = size
     r = _req(
         "POST", f"{HF_INFER_URL}{HF_IMAGE_MODEL}",
         headers={"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "application/json"},
-        json_data={"inputs": prompt, "parameters": {"width": IMG_W, "height": IMG_H}},
+        json_data={"inputs": prompt, "parameters": {"width": w, "height": h}},
         timeout=120, max_retries=2, retry_delay=8,
     )
     ct = r.headers.get("Content-Type", "")
@@ -318,12 +321,13 @@ def _i_hf(prompt: str, chemin: str) -> None:
         f.write(r.content)
 
 
-def _i_together(prompt: str, chemin: str) -> None:
+def _i_together(prompt: str, chemin: str, size: tuple[int, int]) -> None:
+    w, h = size
     r = _req(
         "POST", TOGETHER_IMAGE_URL,
         headers={"Authorization": f"Bearer {TOGETHER_API_KEY}", "Content-Type": "application/json"},
         json_data={"model": TOGETHER_IMAGE_MODEL, "prompt": prompt,
-                   "width": IMG_W, "height": IMG_H, "n": 1, "response_format": "b64_json"},
+                   "width": w, "height": h, "n": 1, "response_format": "b64_json"},
         timeout=120,
     )
     b64 = r.json()["data"][0]["b64_json"]
@@ -332,27 +336,59 @@ def _i_together(prompt: str, chemin: str) -> None:
 
 
 def _i_pollinations(prompt: str, chemin: str) -> None:
-    encoded = urllib.parse.quote(prompt, safe='')   # ← encode le "/" de "Scène 1/3" → plus de 404
+    # Pollinations taille fixe 1080x1920 (qualité correcte)
+    encoded = urllib.parse.quote(prompt, safe='')
     url = f"{POLLINATIONS_URL}{encoded}?width={POLL_W}&height={POLL_H}&nologo=true"
-    r = _req("GET", url, headers={"User-Agent": "NyavoChannel/1.0"}, timeout=120, stream=True)
+    r = _req("GET", url, headers={"User-Agent": "Nyavodroid/1.0"}, timeout=120, stream=True)
     with open(chemin, "wb") as f:
         for chunk in r.iter_content(chunk_size=8192):
             f.write(chunk)
 
 
-def _check_img(chemin: str) -> None:
+def _check_img(chemin: str, expected_size: tuple[int, int] | None = None) -> None:
     taille = os.path.getsize(chemin)
     if taille < 1024:
         raise ValueError(f"image suspecte ({taille} octets)")
+    # Vérification du ratio si expected_size est fourni
+    if expected_size:
+        try:
+            import subprocess as sp
+            cmd = [
+                "ffprobe", "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=width,height",
+                "-of", "csv=p=0", chemin
+            ]
+            out = sp.run(cmd, capture_output=True, text=True, check=True)
+            w, h = out.stdout.strip().split(",")
+            w, h = int(w), int(h)
+            ratio_obtenu = w / h
+            ratio_attendu = expected_size[0] / expected_size[1]
+            if abs(ratio_obtenu - ratio_attendu) > 0.05:
+                print(f"    ⚠️ Ratio image {w}x{h} (attendu {expected_size[0]}x{expected_size[1]}), possible déformation.")
+        except Exception:
+            pass  # ffprobe absent ou erreur, on ignore
 
 
-def image_avec_fallback(prompt: str, gemini_key: str, chemin: str) -> None:
+def image_avec_fallback(prompt: str, gemini_key: str, chemin: str, size: tuple[int, int] | None = None) -> None:
+    """
+    Génère une image avec fallback.
+    Si 'size' n'est pas spécifié, on utilise DEFAULT_IMG_SIZE (1024x1792).
+    Pour les stories, appeler avec size=(1080,1920).
+    """
+    if size is None:
+        size = DEFAULT_IMG_SIZE
+    w_target, h_target = size
     prompt = clean_text(prompt)
+    # Ajout d'une instruction de qualité/ratio dans le prompt
+    prompt += ", high quality, sharp focus, no stretching, no distortion, exactly 9:16 vertical aspect ratio"
+
     erreurs = []
 
     try:
         print("    🖼️ Gemini image...")
-        _i_gemini(prompt, chemin, gemini_key); _check_img(chemin)
+        _i_gemini(prompt, chemin, gemini_key, size)
+        _check_img(chemin, size)
         print(f"    ✅ Image Gemini ({os.path.getsize(chemin):,} o)")
         return
     except Exception as e:
@@ -361,7 +397,8 @@ def image_avec_fallback(prompt: str, gemini_key: str, chemin: str) -> None:
     if HF_TOKEN:
         try:
             print("    🖼️ Hugging Face image...")
-            _i_hf(prompt, chemin); _check_img(chemin)
+            _i_hf(prompt, chemin, size)
+            _check_img(chemin, size)
             print(f"    ✅ Image HF ({os.path.getsize(chemin):,} o)")
             return
         except Exception as e:
@@ -370,7 +407,8 @@ def image_avec_fallback(prompt: str, gemini_key: str, chemin: str) -> None:
     if TOGETHER_API_KEY:
         try:
             print("    🖼️ Together image...")
-            _i_together(prompt, chemin); _check_img(chemin)
+            _i_together(prompt, chemin, size)
+            _check_img(chemin, size)
             print(f"    ✅ Image Together ({os.path.getsize(chemin):,} o)")
             return
         except Exception as e:
@@ -378,7 +416,8 @@ def image_avec_fallback(prompt: str, gemini_key: str, chemin: str) -> None:
 
     try:
         print("    🖼️ Pollinations image...")
-        _i_pollinations(prompt, chemin); _check_img(chemin)
+        _i_pollinations(prompt, chemin)
+        _check_img(chemin)  # Pollinations toujours 1080x1920, on ne vérifie pas le ratio exact ici
         print(f"    ✅ Image Pollinations ({os.path.getsize(chemin):,} o)")
         return
     except Exception as e:
