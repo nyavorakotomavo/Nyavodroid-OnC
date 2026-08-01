@@ -92,7 +92,6 @@ def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
         f"L'image doit refléter visuellement le contenu du texte.")
     M.image_avec_fallback(prompt, GEMINI_API_KEY, chemin, size=(1080, 1920))
 
-
 def incruster_texte(image_in: str, texte: str, image_out: str) -> None:
     # ─── 1. Wrapping + taille adaptative ───
     lignes = wrap_text(texte, max_chars=26)
@@ -127,56 +126,16 @@ def incruster_texte(image_in: str, texte: str, image_out: str) -> None:
             f"crop={STORY_WIDTH}:{STORY_HEIGHT}"
         )
 
-    # ─── 3. Trait néon simple (ffmpeg compatible) ───
-    trait_w = "w*0.25"
-    trait_x = f"(w-{trait_w})/2"
-    trait_y = "h*0.63"
-    trait = f"drawbox=x={trait_x}:y={trait_y}:w={trait_w}:h=3:color=0x00E5FF@0.8"
+    # ─── 3. Trait néon décoratif (optionnel) ───
+    trait = "drawbox=x=405:y=1210:w=270:h=3:color=0x00E5FF@0.8"
 
-    # ─── 4. Texte avec box, ombre portée ───
+    # ─── 4. Texte blanc SANS fond, avec ombre douce ───
     y_pos = "h*0.65"
     texte_filtre = (
         f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
         f"text='{texte_esc}':fontcolor=0xFFFFFF:fontsize={fontsize}:"
         f"x=(w-text_w)/2:y={y_pos}:"
-        f"box=1:boxcolor=0x0D0D0D@0.75:boxborderw=36:line_spacing=14:"
-        f"shadowcolor=0x00E5FF@0.25:shadowx=0:shadowy=4"
-    )
-
-    filtre = f"{scale_filter},{trait},{texte_filtre}"
-
-    try:
-        print("  🎨 Incrustation texte + design via ffmpeg...")
-        subprocess.run(
-            ["ffmpeg", "-i", image_in, "-vf", filtre, "-frames:v", "1", "-y", image_out],
-            check=True, capture_output=True, text=True
-        )
-        print(f"  ✅ Image finale : {image_out}")
-    except FileNotFoundError:
-        raise RuntimeError("ffmpeg absent. Installez : sudo apt-get install -y ffmpeg fonts-dejavu-core")
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"ffmpeg échec (code {e.returncode}) :\n{e.stderr[:500]}") from e
-
-    # ─── 3. Design : trait néon décoratif + texte dans le tiers inférieur ───
-    y_pos = "h*0.65"           # position verticale du texte (tiers inférieur)
-    trait_y = "h*0.63"         # trait juste au-dessus du texte
-    trait_w = "w*0.25"         # largeur du trait (25% de l'image)
-    trait_x = f"(w-{trait_w})/2"
-
-    # Trait principal + petites barres décoratives aux extrémités
-    trait = (
-        f"drawbox=x={trait_x}:y={trait_y}:w={trait_w}:h=3:color=0x00E5FF@0.8:t=fill,"
-        f"drawbox=x={trait_x}-24:y={trait_y}:w=8:h=3:color=0x00E5FF@0.5:t=fill,"
-        f"drawbox=x={trait_x}+{trait_w}+16:y={trait_y}:w=8:h=3:color=0x00E5FF@0.5:t=fill"
-    )
-
-    # Texte avec box, ombre portée
-    texte_filtre = (
-        f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-        f"text='{texte_esc}':fontcolor=0xFFFFFF:fontsize={fontsize}:"
-        f"x=(w-text_w)/2:y={y_pos}:"
-        f"box=1:boxcolor=0x0D0D0D@0.75:boxborderw=36:line_spacing=14:"
-        f"shadowcolor=0x00E5FF@0.25:shadowx=0:shadowy=4"
+        f"shadowcolor=0x000000@0.4:shadowx=2:shadowy=2"
     )
 
     filtre = f"{scale_filter},{trait},{texte_filtre}"
