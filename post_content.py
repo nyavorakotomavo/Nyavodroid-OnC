@@ -185,22 +185,20 @@ def _generer_audio_reel(pilier: str) -> None:
               "cinematic tension, retro-futuristic, no vocals, no speech")
     print("  🎵 Génération musique de fond (best-effort)...")
     M.audio_avec_fallback(prompt, AUDIO_PATH)
-
-
 def _assembler_video(images: list, textes: list, sortie: str) -> None:
     audio_existe = os.path.exists(AUDIO_PATH)
     duree_totale = len(images) * DUREE_PAR_IMAGE
 
-    # Si pas de musique, on génère un silence de la durée totale
+    # Si pas de musique, on génère un silence en AAC natif
     if not audio_existe:
-        print("  🔇 'background_music.mp3' absent → génération piste silencieuse...")
+        print("  🔇 'background_music.mp3' absent → génération silence AAC...")
+        silence_aac = "silence.m4a"
         subprocess.run(
-            ["ffmpeg", "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo",
-             "-t", str(duree_totale), "-q:a", "9", "-acodec", "libmp3lame",
-             "-y", SILENT_AUDIO_PATH],
+            ["ffmpeg", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+             "-t", str(duree_totale), "-c:a", "aac", "-b:a", "128k", "-y", silence_aac],
             check=True, capture_output=True, text=True
         )
-        audio_source = SILENT_AUDIO_PATH
+        audio_source = silence_aac
     else:
         audio_source = AUDIO_PATH
 
