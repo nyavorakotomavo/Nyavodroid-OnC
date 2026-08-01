@@ -3,7 +3,8 @@
 Nyavodroid — publication multi-formats (texte / image+texte / Reel).
 Logique métier uniquement ; texte/image/audio viennent de nyavo_media.
 Secrets : FB_PAGE_ID, FB_PAGE_ACCESS_TOKEN, GEMINI_API_KEY_CONTENT,
-          MISTRAL_API_KEY, TOGETHER_API_KEY, HF_TOKEN, REPLICATE_API_TOKEN
+          MISTRAL_API_KEY, TOGETHER_API_KEY, HF_TOKEN, REPLICATE_API_TOKEN,
+          FAL_API_KEY, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN
 """
 
 import os
@@ -26,6 +27,7 @@ GEMINI_API_KEY = M.clean(os.environ["GEMINI_API_KEY_CONTENT"])
 IMAGE_PATH = "post_image.png"
 REEL_VIDEO_PATH = "reel_video.mp4"
 AUDIO_PATH = "background_music.mp3"
+SILENT_AUDIO_PATH = "silence.mp3"
 NB_IMAGES_REEL = 3
 DUREE_PAR_IMAGE = 3.5
 STORY_WIDTH, STORY_HEIGHT = 1080, 1920
@@ -67,15 +69,15 @@ def publier_texte_seul(pilier: str) -> dict:
     style = random.choice(STORY_PROMPTS)
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
     prompt = (
-        f"Tu es Nyavodroid, la page tech qui révèle les mécanismes cachés du monde numérique.\n\n"
+        "Tu es Nyavodroid, la page tech qui révèle les mécanismes cachés du monde numérique.\n\n"
         f"Axe éditorial : {PILLARS[pilier]['label']}\nSujet imposé : {sujet}\nAngle : {style}\n\n"
-        f"Écris un post Facebook en respectant EXACTEMENT cette structure (blocs séparés par un saut de ligne vide) :\n\n"
-        f"BLOC 1 — HOOK : < 80 car., 1 emoji pertinent, phrase choc, pas de point final\n"
-        f"BLOC 2 — CONTEXTE : 1 à 5 phrases, exactement 1 terme technique précis (DNS, API, LLM, GPU...), ton {TON_EDITORIAL}\n"
-        f"BLOC 3 — QUESTION/CTA : UNE question binaire ou incitation au partage\n"
-        f"BLOC 4 — HASHTAGS : 2 ou 3 hashtags pertinents\n\n"
-        f"RÈGLES : pas de Markdown, pas d'astérisques, pas de guillemets, pas de titre, pas de numérotation, "
-        f"chaque bloc séparé par EXACTEMENT un saut de ligne vide. Interdit : généralités, banalités, pavés."
+        "Écris un post Facebook en respectant EXACTEMENT cette structure (blocs séparés par un saut de ligne vide) :\n\n"
+        "BLOC 1 — HOOK : < 80 car., 1 emoji pertinent, phrase choc, pas de point final\n"
+        "BLOC 2 — CONTEXTE : 1 à 5 phrases, exactement 1 terme technique précis (DNS, API, LLM, GPU...), ton " + TON_EDITORIAL + "\n"
+        "BLOC 3 — QUESTION/CTA : UNE question binaire ou incitation au partage\n"
+        "BLOC 4 — HASHTAGS : 2 ou 3 hashtags pertinents\n\n"
+        "RÈGLES : pas de Markdown, pas d'astérisques, pas de guillemets, pas de titre, pas de numérotation, "
+        "chaque bloc séparé par EXACTEMENT un saut de ligne vide. Interdit : généralités, banalités, pavés."
     )
     texte = M.texte_avec_fallback(prompt, GEMINI_API_KEY, "(post texte)")
     print(f"\n📌 Axe   : {PILLARS[pilier]['label']}\n📌 Sujet : {sujet}\n📌 Texte :\n{texte}\n")
@@ -128,7 +130,7 @@ def _generer_phrases_reel(pilier: str):
     actes_desc = "".join(f"Acte {i} — {a['acte']} : {a['role']}\n  → {a['consigne_texte']}\n"
                          for i, a in enumerate(STRUCTURE_REEL, 1))
     prompt = (
-        f"Tu es Nyavodroid, la page tech immersive de storytelling technologique.\n\n"
+        "Tu es Nyavodroid, la page tech immersive de storytelling technologique.\n\n"
         f"Axe : {label}\nSujet imposé : {sujet}\n\n"
         f"MISSION : MINI-HISTOIRE en exactement {NB_IMAGES_REEL} actes, narration cohérente (début→tension→chute), PAS des faits isolés.\n\n"
         f"Structure :\n{actes_desc}\n"
@@ -182,19 +184,32 @@ def _generer_audio_reel(pilier: str) -> None:
     prompt = ("Dark synthwave cyber ambient instrumental, deep analog bass, neon atmosphere, "
               "cinematic tension, retro-futuristic, no vocals, no speech")
     print("  🎵 Génération musique de fond (best-effort)...")
-    M.audio_avec_fallback(prompt, AUDIO_PATH)   # ne lève jamais
+    M.audio_avec_fallback(prompt, AUDIO_PATH)
 
 
 def _assembler_video(images: list, textes: list, sortie: str) -> None:
     audio_existe = os.path.exists(AUDIO_PATH)
+    duree_totale = len(images) * DUREE_PAR_IMAGE
+
+    # Si pas de musique, on génère un silence de la durée totale
     if not audio_existe:
-        print("  ⚠️  'background_music.mp3' absent → vidéo sans son.")
+        print("  🔇 'background_music.mp3' absent → génération piste silencieuse...")
+        subprocess.run(
+            ["ffmpeg", "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo",
+             "-t", str(duree_totale), "-q:a", "9", "-acodec", "libmp3lame",
+             "-y", SILENT_AUDIO_PATH],
+            check=True, capture_output=True, text=True
+        )
+        audio_source = SILENT_AUDIO_PATH
+    else:
+        audio_source = AUDIO_PATH
+
     inputs = []
     for img in images:
         inputs += ["-loop", "1", "-t", str(DUREE_PAR_IMAGE), "-i", img]
-    if audio_existe:
-        inputs += ["-i", AUDIO_PATH]
+    inputs += ["-i", audio_source]
     n = len(images)
+
     filtres = []
     for i in range(n):
         filtres.append(
@@ -218,13 +233,12 @@ def _assembler_video(images: list, textes: list, sortie: str) -> None:
                 f"text='{i+1}/{NB_IMAGES_REEL}':fontcolor=0x00E5FF@0.5:fontsize=28:"
                 f"x=(w-text_w)/2:y=60:alpha='{alpha}':enable='between(t,{t0+0.3},{t1-0.3})'")
     filtres.append(txt + "[final]")
-    map_args = ["-map", "[final]"]
-    if audio_existe:
-        map_args += ["-map", f"{n}:a"]
-    cmd = ["ffmpeg", *inputs, "-filter_complex", ";".join(filtres), *map_args,
+
+    cmd = ["ffmpeg", *inputs, "-filter_complex", ";".join(filtres),
+           "-map", "[final]", "-map", f"{n}:a",
            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
            "-c:a", "aac", "-b:a", "128k", "-pix_fmt", "yuv420p",
-           "-t", str(n * DUREE_PAR_IMAGE), "-y", sortie]
+           "-t", str(duree_totale), "-y", sortie]
     try:
         print("  🎬 Assemblage vidéo ffmpeg (3 actes)...")
         subprocess.run(cmd, check=True, capture_output=True, text=True)
@@ -242,7 +256,7 @@ def publier_reel(pilier: str) -> dict:
     for i, (p, a) in enumerate(zip(phrases, STRUCTURE_REEL), 1):
         print(f"   {i}. [{a['acte']}] {p}")
     images = _generer_images_reel(pilier, phrases, sujet)
-    _generer_audio_reel(pilier)                 # best-effort, avant le montage
+    _generer_audio_reel(pilier)
     _assembler_video(images, phrases, REEL_VIDEO_PATH)
     ep = f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/video_reels"
     try:
