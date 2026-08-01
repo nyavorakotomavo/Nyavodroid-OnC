@@ -4,7 +4,7 @@ Nyavodroid — module média partagé (texte + image + audio).
 Chaînes de fallback robustes, zéro duplication entre post_content / post_story.
 
   TEXTE : Mistral → Together (Mixtral) → Gemini (multi-modèles) → Hugging Face
-  IMAGE : Gemini → Hugging Face → Together (FLUX) → Pollinations
+  IMAGE : Gemini → Hugging Face → Together (FLUX) → Fal.ai → Cloudflare → Pollinations
   AUDIO : Replicate (musicgen) → Hugging Face (musicgen) → muet (best-effort)
 
 Règle "fiable" : un 429 (quota) fait basculer IMMÉDIATEMENT au fournisseur suivant
@@ -15,6 +15,7 @@ brièvement. Les clés absentes = fournisseur sauté silencieusement.
 import base64
 import os
 import re
+import subprocess
 import time
 import urllib.parse
 
@@ -38,7 +39,7 @@ def clean_text(t: str) -> str:
 
 
 # ──────────────────────────────────────────────
-# Secrets (communs aux 2 workflows ; Gemini est passé en paramètre car dédié)
+# Secrets
 # ──────────────────────────────────────────────
 FB_PAGE_ID = clean(os.environ["FB_PAGE_ID"])
 FB_PAGE_ACCESS_TOKEN = clean(os.environ["FB_PAGE_ACCESS_TOKEN"])
@@ -46,6 +47,9 @@ MISTRAL_API_KEY = clean(os.environ.get("MISTRAL_API_KEY", ""))
 TOGETHER_API_KEY = clean(os.environ.get("TOGETHER_API_KEY", ""))
 HF_TOKEN = clean(os.environ.get("HF_TOKEN", ""))
 REPLICATE_API_TOKEN = clean(os.environ.get("REPLICATE_API_TOKEN", ""))
+FAL_API_KEY = clean(os.environ.get("FAL_API_KEY", ""))
+CLOUDFLARE_ACCOUNT_ID = clean(os.environ.get("CLOUDFLARE_ACCOUNT_ID", ""))
+CLOUDFLARE_API_TOKEN = clean(os.environ.get("CLOUDFLARE_API_TOKEN", ""))
 
 # ──────────────────────────────────────────────
 # Constantes
@@ -59,6 +63,8 @@ HF_INFER_URL = "https://api-inference.huggingface.co/models/"
 POLLINATIONS_URL = "https://image.pollinations.ai/prompt/"
 GEMINI_IMAGE_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 GEMINI_TEXT_BASE = "https://generativelanguage.googleapis.com/v1beta/models/"
+FAL_IMAGE_URL = "https://fal.run/fal-ai/flux/dev"
+CLOUDFLARE_IMAGE_URL = None  # sera construit avec l'account ID
 
 # Modèles
 TOGETHER_TEXT_MODEL = "mistralai/Mixtral-8x7B-Instruct-v0.1"
@@ -68,13 +74,14 @@ HF_IMAGE_MODEL = "stabilityai/stable-diffusion-xl-base-1.0"
 GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image"
 REPLICATE_AUDIO_MODEL = "meta/musicgen"
 HF_AUDIO_MODEL = "facebook/musicgen-small"
+CLOUDFLARE_MODEL = "@cf/black-forest-labs/flux-1-schnell"
 
 # Dimensions par défaut (pour posts classiques)
 DEFAULT_IMG_SIZE = (1024, 1792)       # 9:16
 POLL_W, POLL_H = 1080, 1920          # Pollinations (taille fixe pour la qualité)
 AUDIO_SECONDS = 11
 
-# Modèles texte Gemini essayés dans l'ordre (ceux qui EXISTENT ; les 429 basculent vite)
+# Modèles texte Gemini essayés dans l'ordre
 GEMINI_TEXT_MODELS = ["gemini-flash-latest", "gemini-pro-latest", "gemini-2.5-pro", "gemini-2.5-flash"]
 
 TIMEOUT = 60
@@ -90,10 +97,6 @@ def _req(
     timeout: int = TIMEOUT, stream: bool = False,
     max_retries: int = 2, retry_delay: int = 6,
 ) -> requests.Response:
-    """
-    429 / 4xx  → lève immédiatement (le fallback suivant prend le relais).
-    5xx / timeout / connexion → retente max_retries fois avec retry_delay.
-    """
     derniere: Exception | None = None
     for tentative in range(1, max_retries + 1):
         try:
@@ -103,7 +106,7 @@ def _req(
                 timeout=timeout, stream=stream,
             )
             if r.status_code == 429:
-                r.raise_for_status()            # quota plein → bascule, pas d'attente
+                r.raise_for_status()
             if r.status_code >= 500:
                 derniere = requests.exceptions.HTTPError(f"HTTP {r.status_code}", response=r)
                 print(f"    ↻ {r.status_code} — retry {tentative}/{max_retries} dans {retry_delay}s")
@@ -112,7 +115,7 @@ def _req(
             r.raise_for_status()
             return r
         except requests.exceptions.HTTPError:
-            raise                                # 429 / 4xx propagés tout de suite
+            raise
         except requests.exceptions.Timeout as e:
             derniere = e
             print(f"    ↻ timeout — retry {tentative}/{max_retries}")
@@ -156,6 +159,30 @@ def verify_fb_token() -> None:
         print(f"  ✅ Token FB valide — Page : {info.get('name','?')} (ID: {info.get('id','?')})")
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"Impossible de vérifier le token Facebook : {e}") from e
+
+
+# ══════════════════════════════════════════════
+#  UTILITAIRE — crop 9:16 depuis une image carrée
+# ══════════════════════════════════════════════
+def crop_to_9_16(input_path: str, output_path: str, target_size: tuple[int, int] = (1080, 1920)) -> None:
+    """
+    Prend une image (souvent carrée) et la recadre en 9:16.
+    Zoom intelligent : rogne les côtés pour remplir sans déformer.
+    """
+    w_target, h_target = target_size
+    filtre = (
+        f"scale={w_target}:{h_target}:force_original_aspect_ratio=increase,"
+        f"crop={w_target}:{h_target}"
+    )
+    try:
+        subprocess.run(
+            ["ffmpeg", "-i", input_path, "-vf", filtre, "-frames:v", "1", "-y", output_path],
+            check=True, capture_output=True, text=True,
+        )
+    except FileNotFoundError:
+        raise RuntimeError("ffmpeg absent. Installez : sudo apt-get install -y ffmpeg")
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"ffmpeg crop échec : {e.stderr[:300]}")
 
 
 # ══════════════════════════════════════════════
@@ -227,7 +254,7 @@ def _t_hf(prompt: str) -> str:
     )
     j = r.json()
     txt = j[0]["generated_text"] if isinstance(j, list) else j.get("generated_text", "")
-    if "[/INST]" in txt:                       # filet : retirer l'écho du template
+    if "[/INST]" in txt:
         txt = txt.split("[/INST]", 1)[1]
     txt = clean_text(txt)
     if not txt:
@@ -263,7 +290,7 @@ def texte_avec_fallback(prompt: str, gemini_key: str, tag: str = "") -> str:
 
 
 # ══════════════════════════════════════════════
-#  IMAGE — fournisseurs (avec paramètre de taille)
+#  IMAGE — fournisseurs
 # ══════════════════════════════════════════════
 def _extract_b64(res: dict) -> str:
     if "output_image" in res:
@@ -291,8 +318,6 @@ def _extract_b64(res: dict) -> str:
 
 
 def _i_gemini(prompt: str, chemin: str, gemini_key: str, size: tuple[int, int]) -> None:
-    # Gemini ne prend pas de dimensions exactes, mais on peut indiquer "1K" et aspect 9:16
-    # pour garantir 1024x1792. On utilisera toujours le même format, peu importe size car size standard.
     r = _req(
         "POST", GEMINI_IMAGE_URL,
         headers={"x-goog-api-key": gemini_key, "Content-Type": "application/json"},
@@ -315,7 +340,7 @@ def _i_hf(prompt: str, chemin: str, size: tuple[int, int]) -> None:
         timeout=120, max_retries=2, retry_delay=8,
     )
     ct = r.headers.get("Content-Type", "")
-    if "image" not in ct:                       # JSON d'erreur au lieu d'une image
+    if "image" not in ct:
         raise ValueError(f"réponse non-image ({ct}) : {r.text[:200]}")
     with open(chemin, "wb") as f:
         f.write(r.content)
@@ -335,10 +360,57 @@ def _i_together(prompt: str, chemin: str, size: tuple[int, int]) -> None:
         f.write(base64.b64decode(b64))
 
 
+def _i_fal(prompt: str, chemin: str) -> None:
+    """Fal.ai FLUX.1-dev — génère en 1024x1024 (carré)."""
+    r = _req(
+        "POST", FAL_IMAGE_URL,
+        headers={"Authorization": f"Key {FAL_API_KEY}", "Content-Type": "application/json"},
+        json_data={
+            "prompt": prompt,
+            "image_size": "square_hd",  # 1024x1024
+            "num_inference_steps": 28,
+            "guidance_scale": 3.5,
+            "num_images": 1,
+            "enable_safety_checker": False,
+        },
+        timeout=120,
+    )
+    data = r.json()
+    img_url = data.get("images", [None])[0]
+    if not img_url or not img_url.get("url"):
+        raise ValueError(f"Fal.ai réponse invalide : {data}")
+    img_data = requests.get(img_url["url"], timeout=60).content
+    with open(chemin, "wb") as f:
+        f.write(img_data)
+
+
+def _i_cloudflare(prompt: str, chemin: str) -> None:
+    """Cloudflare Workers AI FLUX Schnell — génère en 1024x1024 (carré)."""
+    url = f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/{CLOUDFLARE_MODEL}"
+    r = _req(
+        "POST", url,
+        headers={"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}", "Content-Type": "application/json"},
+        json_data={
+            "prompt": prompt,
+            "num_steps": 4,  # Schnell = rapide, 4 steps suffisent
+        },
+        timeout=60,
+    )
+    data = r.json()
+    if not data.get("success"):
+        raise ValueError(f"Cloudflare erreur : {data}")
+    # Cloudflare renvoie l'image en bytes directement (Content-Type: image/png)
+    # Mais via l'API REST, c'est en base64 dans le JSON
+    b64 = data.get("result", {}).get("image")
+    if not b64:
+        raise ValueError(f"Cloudflare pas d'image : {data}")
+    with open(chemin, "wb") as f:
+        f.write(base64.b64decode(b64))
+
+
 def _i_pollinations(prompt: str, chemin: str) -> None:
-    # Pollinations taille fixe 1080x1920 (qualité correcte)
     encoded = urllib.parse.quote(prompt, safe='')
-    url = f"{POLLINATIONS_URL}{encoded}?width={POLL_W}&height={POLL_H}&nologo=true"
+    url = f"{POLLINATIONS_URL}{encoded}?width={POLL_W}&height={POLL_H}&nologo=true&enhance=true"
     r = _req("GET", url, headers={"User-Agent": "Nyavodroid/1.0"}, timeout=120, stream=True)
     with open(chemin, "wb") as f:
         for chunk in r.iter_content(chunk_size=8192):
@@ -349,17 +421,15 @@ def _check_img(chemin: str, expected_size: tuple[int, int] | None = None) -> Non
     taille = os.path.getsize(chemin)
     if taille < 1024:
         raise ValueError(f"image suspecte ({taille} octets)")
-    # Vérification du ratio si expected_size est fourni
     if expected_size:
         try:
-            import subprocess as sp
             cmd = [
                 "ffprobe", "-v", "error",
                 "-select_streams", "v:0",
                 "-show_entries", "stream=width,height",
                 "-of", "csv=p=0", chemin
             ]
-            out = sp.run(cmd, capture_output=True, text=True, check=True)
+            out = subprocess.run(cmd, capture_output=True, text=True, check=True)
             w, h = out.stdout.strip().split(",")
             w, h = int(w), int(h)
             ratio_obtenu = w / h
@@ -367,24 +437,22 @@ def _check_img(chemin: str, expected_size: tuple[int, int] | None = None) -> Non
             if abs(ratio_obtenu - ratio_attendu) > 0.05:
                 print(f"    ⚠️ Ratio image {w}x{h} (attendu {expected_size[0]}x{expected_size[1]}), possible déformation.")
         except Exception:
-            pass  # ffprobe absent ou erreur, on ignore
+            pass
 
 
 def image_avec_fallback(prompt: str, gemini_key: str, chemin: str, size: tuple[int, int] | None = None) -> None:
     """
     Génère une image avec fallback.
     Si 'size' n'est pas spécifié, on utilise DEFAULT_IMG_SIZE (1024x1792).
-    Pour les stories, appeler avec size=(1080,1920).
     """
     if size is None:
         size = DEFAULT_IMG_SIZE
-    w_target, h_target = size
-    prompt = clean_text(prompt)
-    # Ajout d'une instruction de qualité/ratio dans le prompt
-    prompt += ", high quality, sharp focus, no stretching, no distortion, exactly 9:16 vertical aspect ratio"
 
+    prompt = clean_text(prompt)
+    prompt += ", high quality, sharp focus, no stretching, no distortion"
     erreurs = []
 
+    # 1. Gemini (9:16 natif)
     try:
         print("    🖼️ Gemini image...")
         _i_gemini(prompt, chemin, gemini_key, size)
@@ -394,6 +462,7 @@ def image_avec_fallback(prompt: str, gemini_key: str, chemin: str, size: tuple[i
     except Exception as e:
         erreurs.append(f"Gemini={e}"); print(f"    ⚠️ Gemini image : {e}")
 
+    # 2. Hugging Face (9:16 natif)
     if HF_TOKEN:
         try:
             print("    🖼️ Hugging Face image...")
@@ -404,6 +473,7 @@ def image_avec_fallback(prompt: str, gemini_key: str, chemin: str, size: tuple[i
         except Exception as e:
             erreurs.append(f"HF={e}"); print(f"    ⚠️ HF image : {e}")
 
+    # 3. Together (9:16 natif)
     if TOGETHER_API_KEY:
         try:
             print("    🖼️ Together image...")
@@ -414,10 +484,41 @@ def image_avec_fallback(prompt: str, gemini_key: str, chemin: str, size: tuple[i
         except Exception as e:
             erreurs.append(f"Together={e}"); print(f"    ⚠️ Together image : {e}")
 
+    # 4. Fal.ai (carré → crop 9:16)
+    if FAL_API_KEY:
+        try:
+            print("    🖼️ Fal.ai image (carré → crop 9:16)...")
+            raw = chemin + ".raw.png"
+            _i_fal(prompt, raw)
+            _check_img(raw)
+            crop_to_9_16(raw, chemin, target_size=size)
+            _check_img(chemin, size)
+            os.remove(raw)
+            print(f"    ✅ Image Fal.ai ({os.path.getsize(chemin):,} o)")
+            return
+        except Exception as e:
+            erreurs.append(f"Fal.ai={e}"); print(f"    ⚠️ Fal.ai : {e}")
+
+    # 5. Cloudflare (carré → crop 9:16)
+    if CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN:
+        try:
+            print("    🖼️ Cloudflare image (carré → crop 9:16)...")
+            raw = chemin + ".raw.png"
+            _i_cloudflare(prompt, raw)
+            _check_img(raw)
+            crop_to_9_16(raw, chemin, target_size=size)
+            _check_img(chemin, size)
+            os.remove(raw)
+            print(f"    ✅ Image Cloudflare ({os.path.getsize(chemin):,} o)")
+            return
+        except Exception as e:
+            erreurs.append(f"Cloudflare={e}"); print(f"    ⚠️ Cloudflare : {e}")
+
+    # 6. Pollinations (dernier recours)
     try:
-        print("    🖼️ Pollinations image...")
+        print("    🖼️ Pollinations image (dernier recours)...")
         _i_pollinations(prompt, chemin)
-        _check_img(chemin)  # Pollinations toujours 1080x1920, on ne vérifie pas le ratio exact ici
+        _check_img(chemin)
         print(f"    ✅ Image Pollinations ({os.path.getsize(chemin):,} o)")
         return
     except Exception as e:
@@ -441,7 +542,7 @@ def _a_replicate(prompt: str, chemin: str) -> None:
     if not get_url:
         raise ValueError(f"pas d'url de polling : {pred}")
     out_url = None
-    for _ in range(40):                          # ~2 min max
+    for _ in range(40):
         time.sleep(3)
         s = requests.get(get_url, headers={"Authorization": f"Token {REPLICATE_API_TOKEN}"}, timeout=20).json()
         st = s.get("status")
