@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Nyavo Channel — publication multi-formats (texte / image+texte / Reel).
+Nyavodroid — publication multi-formats (texte / image+texte / Reel).
 Logique métier uniquement ; texte/image/audio viennent de nyavo_media.
 Secrets : FB_PAGE_ID, FB_PAGE_ACCESS_TOKEN, GEMINI_API_KEY_CONTENT,
           MISTRAL_API_KEY, TOGETHER_API_KEY, HF_TOKEN, REPLICATE_API_TOKEN
@@ -67,7 +67,7 @@ def publier_texte_seul(pilier: str) -> dict:
     style = random.choice(STORY_PROMPTS)
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
     prompt = (
-        f"Tu es Nyavo Channel, une chaîne tech qui révèle les mécanismes cachés du monde numérique.\n\n"
+        f"Tu es Nyavodroid, la page tech qui révèle les mécanismes cachés du monde numérique.\n\n"
         f"Axe éditorial : {PILLARS[pilier]['label']}\nSujet imposé : {sujet}\nAngle : {style}\n\n"
         f"Écris un post Facebook en respectant EXACTEMENT cette structure (blocs séparés par un saut de ligne vide) :\n\n"
         f"BLOC 1 — HOOK : < 80 car., 1 emoji pertinent, phrase choc, pas de point final\n"
@@ -95,11 +95,12 @@ def publier_texte_seul(pilier: str) -> dict:
 def publier_image_texte(pilier: str) -> dict:
     label = PILLARS[pilier]["label"]
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
-    prompt_leg = (f"Tu es Nyavo Channel.\nAxe : {label}\nSujet : {sujet}\n"
+    prompt_leg = (f"Tu es Nyavodroid.\nAxe : {label}\nSujet : {sujet}\n"
                   f"Écris une légende Facebook de 2-3 lignes en français.\nTon : {TON_EDITORIAL}\n"
                   f"Termine par 2-3 hashtags.\nPas de guillemets, pas de Markdown.")
     legende = M.texte_avec_fallback(prompt_leg, GEMINI_API_KEY, "(légende)")
-    prompt_img = f"Illustration verticale 9:16 sur le sujet : {sujet}\nAxe : {label}\nStyle : {STYLE_IMAGE_SUFFIX}"
+    prompt_img = (f"Illustration verticale 9:16 sur le sujet : {sujet}\n"
+                  f"Axe : {label}\nStyle : {STYLE_IMAGE_SUFFIX}")
     print("  🖼️  Génération image...")
     M.image_avec_fallback(prompt_img, GEMINI_API_KEY, IMAGE_PATH)
     print(f"\n📌 Axe    : {label}\n📌 Sujet  : {sujet}\n📌 Légende :\n{legende}\n")
@@ -127,7 +128,7 @@ def _generer_phrases_reel(pilier: str):
     actes_desc = "".join(f"Acte {i} — {a['acte']} : {a['role']}\n  → {a['consigne_texte']}\n"
                          for i, a in enumerate(STRUCTURE_REEL, 1))
     prompt = (
-        f"Tu es Nyavo Channel, chaîne tech immersive de storytelling technologique.\n\n"
+        f"Tu es Nyavodroid, la page tech immersive de storytelling technologique.\n\n"
         f"Axe : {label}\nSujet imposé : {sujet}\n\n"
         f"MISSION : MINI-HISTOIRE en exactement {NB_IMAGES_REEL} actes, narration cohérente (début→tension→chute), PAS des faits isolés.\n\n"
         f"Structure :\n{actes_desc}\n"
@@ -172,7 +173,7 @@ def _generer_images_reel(pilier: str, phrases: list, sujet: str) -> list:
             print(f"  ⏳ Pause anti-rate-limit : {pause:.0f}s...")
             time.sleep(pause)
         print(f"  🖼️  Scène {i}/{NB_IMAGES_REEL} [{acte['acte']}]...")
-        M.image_avec_fallback(prompt, GEMINI_API_KEY, chemin)
+        M.image_avec_fallback(prompt, GEMINI_API_KEY, chemin, size=(1080, 1920))
         chemins.append(chemin)
     return chemins
 
@@ -197,8 +198,8 @@ def _assembler_video(images: list, textes: list, sortie: str) -> None:
     filtres = []
     for i in range(n):
         filtres.append(
-            f"[{i}:v]scale={STORY_WIDTH}:{STORY_HEIGHT}:force_original_aspect_ratio=increase,"
-            f"crop={STORY_WIDTH}:{STORY_HEIGHT},"
+            f"[{i}:v]scale={STORY_WIDTH}:{STORY_HEIGHT}:force_original_aspect_ratio=decrease,"
+            f"pad={STORY_WIDTH}:{STORY_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black,"
             f"zoompan=z='min(zoom+0.0008,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
             f":d={int(DUREE_PAR_IMAGE*25)}:s={STORY_WIDTH}x{STORY_HEIGHT}:fps=25,"
             f"fade=t=in:st=0:d=0.5,fade=t=out:st={DUREE_PAR_IMAGE-0.5}:d=0.5[scene{i}]")
@@ -268,7 +269,7 @@ def publier_reel(pilier: str) -> dict:
 
 def main() -> None:
     print("=" * 60)
-    print("🎬 Nyavo Channel — Multi-formats [Projet Gemini B]")
+    print("🎬 Nyavodroid — Multi-formats [Projet Gemini B]")
     print("=" * 60)
     M.verify_fb_token()
     tc = choisir_type_contenu()
