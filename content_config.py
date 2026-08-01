@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Nyavo Channel — Configuration éditoriale.
+Nyavodroid — Configuration éditoriale.
 Alignée sur la ligne éditoriale officielle :
   Axe 1 : Secrets du code & mécanismes cachés du web
   Axe 2 : Découvertes scientifiques & technologies émergentes
   Axe 3 : Actualité IA, logiciels, gadgets & tendances tech
-  Axe 4 : Coulisses des projets Nyavo (dev, défis, solutions)
+  Axe 4 : Coulisses des projets Nyavodroid (dev, défis, solutions)
 
 Identité visuelle : cyber-minimaliste, sombre, futuriste,
   noir/anthracite, accents cyan/vert néon, ambiance synthwave.
@@ -55,15 +55,15 @@ PILLARS = {
         ],
     },
     "coulisses_nyavo": {
-        "label": "Coulisses des Projets Nyavo",
+        "label": "Coulisses des Projets Nyavodroid",
         "description": (
-            "Développement des applications créées par Nyavo, "
+            "Développement des applications créées par Nyavodroid, "
             "défis techniques rencontrés, solutions mises en œuvre, "
             "évolution des projets, architecture, choix techniques, "
             "lancement, behind the scenes."
         ),
         "mots_cles": [
-            "Nyavo", "développement", "projet", "application",
+            "Nyavodroid", "développement", "projet", "application",
             "défi technique", "solution", "architecture", "lancement",
             "backend", "frontend", "déploiement", "code",
         ],
