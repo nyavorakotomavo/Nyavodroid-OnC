@@ -84,7 +84,7 @@ def generer_image_story(pilier: str, texte: str, chemin: str) -> None:
         f"Illustration verticale 9:16 pour ce texte : {texte}\n"
         f"Axe : {PILLARS[pilier]['label']}\nStyle : {STYLE_IMAGE_SUFFIX}\n"
         f"L'image doit refléter visuellement le contenu du texte.")
-    M.image_avec_fallback(prompt, GEMINI_API_KEY, chemin)
+    M.image_avec_fallback(prompt, GEMINI_API_KEY, chemin,size=(1080,1920))
 
 
 def incruster_texte(image_in: str, texte: str, image_out: str) -> None:
