@@ -276,6 +276,7 @@ def texte_avec_fallback(prompt: str, gemini_key: str, tag: str = "") -> str:
         except Exception as e:
             print(f"    ⚠️ Hugging Face : {e}")
     raise RuntimeError("Texte impossible : tous les fournisseurs ont échoué.")
+
 # ══════════════════════════════════════════════
 #  IMAGE — fournisseurs (Gemini cascade, HF corrigé, Cloudflare neg prompt, Pexels)
 # ══════════════════════════════════════════════
@@ -813,4 +814,53 @@ def overlay_watermark(image_in: str, image_out: str) -> None:
         raise RuntimeError(f"ffmpeg watermark échec : {e.stderr[:500]}")
 
 
-# ═══════════════════════════════
+# ══════════════════════════════════════════════
+#  FOND PILLOW POUR POST TEXTE SEUL
+# ══════════════════════════════════════════════
+def generer_fond_texte_seul(texte: str, chemin: str) -> None:
+    """Génère une image carrée 1080x1080 avec dégradé violet et texte centré."""
+    from content_config import BACKGROUND_GRADIENT, CANVAS_SIZE_TEXTE_SEUL
+    w, h = CANVAS_SIZE_TEXTE_SEUL
+
+    # Création d'un dégradé vertical entre deux couleurs de la palette
+    c1 = BACKGROUND_GRADIENT[0]  # violet profond
+    c2 = BACKGROUND_GRADIENT[2]  # bleu nuit
+    img = Image.new("RGB", (w, h))
+    for y in range(h):
+        r = int(int(c1[1:3], 16) + (int(c2[1:3], 16) - int(c1[1:3], 16)) * y / h)
+        g = int(int(c1[3:5], 16) + (int(c2[3:5], 16) - int(c1[3:5], 16)) * y / h)
+        b = int(int(c1[5:7], 16) + (int(c2[5:7], 16) - int(c1[5:7], 16)) * y / h)
+        for x in range(w):
+            img.putpixel((x, y), (r, g, b))
+
+    draw = ImageDraw.Draw(img)
+    # Police par défaut (DejaVu Sans Bold si disponible, sinon police système)
+    try:
+        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+        font = ImageFont.truetype(font_path, 60)
+    except OSError:
+        font = ImageFont.load_default()
+
+    # Wrapping et centrage
+    max_chars = 30
+    lignes = []
+    for mot in texte.split():
+        if not lignes or len(lignes[-1] + " " + mot) > max_chars:
+            lignes.append(mot)
+        else:
+            lignes[-1] += " " + mot
+
+    # Hauteur totale du bloc texte
+    line_height = font.getbbox("Ag")[3] + 10
+    total_height = len(lignes) * line_height
+    y_start = (h - total_height) // 2
+
+    # Dessin
+    draw = ImageDraw.Draw(img)
+    for i, ligne in enumerate(lignes):
+        bbox = font.getbbox(ligne)
+        text_width = bbox[2] - bbox[0]
+        x = (w - text_width) // 2
+        draw.text((x, y_start + i * line_height), ligne, fill="white", font=font)
+
+    img.save(chemin)
