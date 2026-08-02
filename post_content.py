@@ -445,4 +445,4 @@ def publier_image_texte(pilier: str) -> dict:
 
 # ══════════════════════════════════════════════
 #  FIN DE LA PARTIE 1 — LA PARTIE 2 CONTIENT LE FORMAT REEL ET LE MAIN
-# ══════════════════════════════════════════════
+# ══════════════════════════════════════════════ 
