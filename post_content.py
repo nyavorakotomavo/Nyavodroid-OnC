@@ -342,3 +342,305 @@ def publier_image_texte(pilier: str) -> dict:
 # ══════════════════════════════════════════════
 #  FIN DE LA PARTIE 1 — LA PARTIE 2 CONTIENT LE FORMAT REEL ET LE MAIN
 # ══════════════════════════════════════════════
+# ══════════════════════════════════════════════
+#  FORMAT 3 : REEL (amélioré)
+# ══════════════════════════════════════════════
+def _generer_phrases_reel(pilier: str):
+    """Génère les hooks et détails pour chaque acte du Reel."""
+    label = PILLARS[pilier]["label"]
+    sujet = random.choice(SUJETS_PAR_PILIER[pilier])
+
+    actes_desc = ""
+    for i, a in enumerate(STRUCTURE_REEL, 1):
+        actes_desc += f"Acte {i} — {a['acte']} : {a['role']}\n  → {a['consigne_texte']}\n"
+
+    prompt = (
+        "Tu es Nyavodroid, la page tech immersive de storytelling technologique.\n\n"
+        f"Axe : {label}\nSujet imposé : {sujet}\n\n"
+        f"MISSION : MINI-HISTOIRE en exactement {NB_IMAGES_REEL} actes, narration cohérente (début→tension→chute).\n"
+        "Pour chaque acte, fournis un 'hook' (phrase choc < 10 mots) et un 'detail' (courte précision, source, chiffre, < 5 mots).\n"
+        "Réponds UNIQUEMENT par un tableau JSON contenant des objets avec les clés 'hook' et 'detail'.\n"
+        "Exemple : [{\"hook\": \"Le bitcoin explose\", \"detail\": \"+340% en 1 an\"}, ...]\n"
+        "Pas de texte autour du JSON.\n"
+        f"Ton : {TON_EDITORIAL}"
+    )
+
+    print(f"  📝 Génération phrases Reel (JSON)...\n     Axe : {label}\n     Sujet : {sujet}")
+    brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, f"(Reel : {sujet})")
+    brut = brut.strip()
+    if brut.startswith("```json"):
+        brut = brut[7:]
+    if brut.endswith("```"):
+        brut = brut[:-3]
+
+    try:
+        data = json.loads(brut)
+        hooks = []
+        details = []
+        for item in data[:NB_IMAGES_REEL]:
+            hooks.append(item.get("hook", ""))
+            details.append(item.get("detail", ""))
+        if len(hooks) < NB_IMAGES_REEL:
+            raise ValueError("Pas assez d'éléments dans le JSON")
+    except Exception:
+        # Fallback : ancienne méthode (phrases uniques)
+        print("  ⚠️ Fallback en phrases simples...")
+        actes_desc_simple = "".join(f"Acte {i} — {a['acte']} : {a['role']}\n  → {a['consigne_texte']}\n" for i, a in enumerate(STRUCTURE_REEL, 1))
+        prompt_simple = (
+            "Tu es Nyavodroid, la page tech immersive de storytelling technologique.\n\n"
+            f"Axe : {label}\nSujet imposé : {sujet}\n\n"
+            f"MISSION : MINI-HISTOIRE en exactement {NB_IMAGES_REEL} actes, narration cohérente.\n"
+            f"Structure :\n{actes_desc_simple}\n"
+            f"Consignes : chaque phrase < 10 mots ; numérotées 1 à {NB_IMAGES_REEL}, une par ligne.\n"
+            f"Format :\n1. Phrase une\n2. Phrase deux\n3. Phrase trois"
+        )
+        brut_simple = M.texte_avec_fallback(prompt_simple, GEMINI_API_KEY, f"(Reel fallback : {sujet})")
+        hooks = []
+        details = []
+        for ligne in brut_simple.split("\n"):
+            ligne = M.clean_text(ligne)
+            if ligne and ligne[0].isdigit() and "." in ligne:
+                p = M.clean_text(ligne.split(".", 1)[1].strip())
+                if p:
+                    hooks.append(p)
+                    details.append("")
+        if len(hooks) < NB_IMAGES_REEL:
+            raise ValueError(f"Phrases insuffisantes ({len(hooks)}/{NB_IMAGES_REEL}) : {brut_simple}")
+
+    return sujet, hooks[:NB_IMAGES_REEL], details[:NB_IMAGES_REEL]
+
+
+def incruster_texte_reel(image_in: str, hook: str, detail: str, image_out: str) -> None:
+    """Incruste un hook (grand, centré) et un détail (petit, bas) sur une image de Reel."""
+    # Anti-déformation 9:16
+    try:
+        cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
+               "-show_entries", "stream=width,height", "-of", "csv=p=0", image_in]
+        out = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        w_orig, h_orig = map(int, out.stdout.strip().split(','))
+        ratio_orig = w_orig / h_orig
+        ratio_cible = STORY_WIDTH / STORY_HEIGHT
+        if abs(ratio_orig - ratio_cible) > 0.05:
+            scale_filter = (
+                f"scale={STORY_WIDTH}:{STORY_HEIGHT}:force_original_aspect_ratio=decrease,"
+                f"pad={STORY_WIDTH}:{STORY_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
+            )
+        else:
+            scale_filter = (
+                f"scale={STORY_WIDTH}:{STORY_HEIGHT}:force_original_aspect_ratio=increase,"
+                f"crop={STORY_WIDTH}:{STORY_HEIGHT}"
+            )
+    except Exception:
+        scale_filter = (
+            f"scale={STORY_WIDTH}:{STORY_HEIGHT}:force_original_aspect_ratio=increase,"
+            f"crop={STORY_WIDTH}:{STORY_HEIGHT}"
+        )
+
+    hook_esc = escape_text(wrap_text(hook, max_chars=25))
+    hook_fontsize = 68
+    hook_y = "h*0.35"
+    hook_filtre = (
+        f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+        f"text='{hook_esc}':fontcolor=0xFFFFFF:fontsize={hook_fontsize}:"
+        f"x=(w-text_w)/2:y={hook_y}:"
+        f"shadowcolor=0xEA4FD9@0.6:shadowx=0:shadowy=4"
+    )
+
+    detail_esc = escape_text(wrap_text(detail, max_chars=40))
+    detail_y = f"h-{MARGIN}-{DETAIL_FONTSIZE}"
+    detail_filtre = (
+        f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
+        f"text='{detail_esc}':fontcolor=0xCCCCCC:fontsize={DETAIL_FONTSIZE}:"
+        f"x=(w-text_w)/2:y={detail_y}"
+    )
+
+    filtre = scale_filter
+    if hook:
+        filtre += f",{hook_filtre}"
+    if detail:
+        filtre += f",{detail_filtre}"
+
+    temp_out = image_out + ".tmp.png"
+    try:
+        subprocess.run(
+            ["ffmpeg", "-i", image_in, "-vf", filtre, "-frames:v", "1", "-y", temp_out],
+            check=True, capture_output=True, text=True
+        )
+        os.replace(temp_out, image_out)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"ffmpeg texte reel échec (code {e.returncode}) :\n{e.stderr[:500]}")
+
+
+def _generer_images_reel(pilier: str, hooks: list, details: list, sujet: str) -> list:
+    """Génère les images de chaque scène en 9:16 avec le nouveau style."""
+    label = PILLARS[pilier]["label"]
+    chemins = []
+    for i, (hook, detail) in enumerate(zip(hooks, details), 1):
+        chemin = f"reel_img_{i}.png"
+        ctx = ""
+        if i > 1:
+            ctx += f"Scène précédente : « {hooks[i-2]} »\n"
+        if i < len(hooks):
+            ctx += f"Scène suivante : « {hooks[i]} »\n"
+
+        acte = STRUCTURE_REEL[i-1]
+        prompt = (
+            f"Scène {i}/{NB_IMAGES_REEL} d'une mini-histoire visuelle en 3 actes.\n"
+            f"Sujet global : {sujet}\nAxe : {label}\n\n"
+            f"ACTE {i} — {acte['acte']} : {acte['role']}\n"
+            f"Texte affiché : « {hook} »\n"
+            f"Détail : « {detail} »\n"
+            f"Ambiance : {acte['ambiance']}\n"
+            f"Cadrage : {acte['consigne_image']}\n\n"
+        )
+        if ctx:
+            prompt += f"Continuité narrative :\n{ctx}\n"
+        prompt += f"Style : {STYLE_IMAGE_SUFFIX}\n"
+        prompt += "IMPORTANT : cohérence visuelle avec les autres scènes."
+
+        if i > 1:
+            pause = DELAY_ENTRE_IMAGES + random.uniform(0, 10)
+            print(f"  ⏳ Pause anti-rate-limit : {pause:.0f}s...")
+            time.sleep(pause)
+
+        print(f"  🖼️  Scène {i}/{NB_IMAGES_REEL} [{acte['acte']}]...")
+        M.image_avec_fallback(prompt, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
+
+        # Incruster le texte (hook + détail) sur l'image
+        incruster_texte_reel(chemin, hook, detail, chemin)
+
+        # Appliquer le watermark
+        M.overlay_expression(chemin, chemin)
+
+        chemins.append(chemin)
+    return chemins
+
+
+def _generer_audio_reel(pilier: str) -> None:
+    prompt = ("Dark synthwave cyber ambient instrumental, deep analog bass, neon atmosphere, "
+              "cinematic tension, retro-futuristic, no vocals, no speech")
+    print("  🎵 Génération musique de fond (best-effort)...")
+    M.audio_avec_fallback(prompt, AUDIO_PATH)
+
+
+def _assembler_video(images: list, textes: list, sortie: str) -> None:
+    audio_existe = os.path.exists(AUDIO_PATH)
+    duree_totale = len(images) * DUREE_PAR_IMAGE
+
+    if not audio_existe:
+        print("  🔇 'background_music.mp3' absent → génération silence AAC...")
+        silence_aac = "silence.m4a"
+        subprocess.run(
+            ["ffmpeg", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+             "-t", str(duree_totale), "-c:a", "aac", "-b:a", "128k", "-y", silence_aac],
+            check=True, capture_output=True, text=True
+        )
+        audio_source = silence_aac
+    else:
+        audio_source = AUDIO_PATH
+
+    inputs = []
+    for img in images:
+        inputs += ["-loop", "1", "-t", str(DUREE_PAR_IMAGE), "-i", img]
+    inputs += ["-i", audio_source]
+    n = len(images)
+
+    filtres = []
+    for i in range(n):
+        filtres.append(
+            f"[{i}:v]scale={STORY_WIDTH}:{STORY_HEIGHT}:force_original_aspect_ratio=decrease,"
+            f"pad={STORY_WIDTH}:{STORY_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black,"
+            f"zoompan=z='min(zoom+0.0008,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+            f":d={int(DUREE_PAR_IMAGE*25)}:s={STORY_WIDTH}x{STORY_HEIGHT}:fps=25,"
+            f"fade=t=in:st=0:d=0.5,fade=t=out:st={DUREE_PAR_IMAGE-0.5}:d=0.5[scene{i}]")
+    filtres.append("".join(f"[scene{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=0[slideshow]")
+    txt = "[slideshow]"
+    filtres.append(txt + "[final]")
+
+    cmd = ["ffmpeg", *inputs, "-filter_complex", ";".join(filtres),
+           "-map", "[final]", "-map", f"{n}:a",
+           "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+           "-c:a", "aac", "-b:a", "128k", "-pix_fmt", "yuv420p",
+           "-t", str(duree_totale), "-y", sortie]
+    try:
+        print("  🎬 Assemblage vidéo ffmpeg (3 actes)...")
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        print(f"  ✅ Vidéo : {sortie} ({os.path.getsize(sortie):,} o)")
+    except FileNotFoundError:
+        raise RuntimeError("ffmpeg absent. Installez : sudo apt-get install -y ffmpeg fonts-dejavu-core")
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"ffmpeg échec (code {e.returncode}) :\n{e.stderr[:800]}") from e
+
+
+def publier_reel(pilier: str) -> dict:
+    sujet, hooks, details = _generer_phrases_reel(pilier)
+    print(f"\n📌 Axe   : {PILLARS[pilier]['label']}\n📌 Sujet : {sujet}")
+    print(f"📌 Storytelling Reel ({NB_IMAGES_REEL} actes) :")
+    for i, (h, d) in enumerate(zip(hooks, details), 1):
+        print(f"   {i}. [{STRUCTURE_REEL[i-1]['acte']}] {h} | {d}")
+
+    images = _generer_images_reel(pilier, hooks, details, sujet)
+    _generer_audio_reel(pilier)
+    _assembler_video(images, hooks, REEL_VIDEO_PATH)
+
+    legende = " ".join(hooks) + "\n\n#Nyavodroid"
+
+    ep = f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/video_reels"
+    try:
+        print("  📤 Reel — phase 1/3 (start)...")
+        r1 = M._req("POST", ep, data={"upload_phase": "start", "access_token": M.FB_PAGE_ACCESS_TOKEN}, timeout=M.TIMEOUT)
+        init = r1.json()
+        video_id, upload_url = init.get("video_id"), init.get("upload_url")
+        if not video_id or not upload_url:
+            raise ValueError(f"Phase start échouée : {init}")
+        print("  📤 Reel — phase 2/3 (transfer)...")
+        with open(REEL_VIDEO_PATH, "rb") as f:
+            M._req("POST", upload_url,
+                   data={"upload_phase": "transfer", "video_id": video_id, "access_token": M.FB_PAGE_ACCESS_TOKEN},
+                   files={"video_file": (os.path.basename(REEL_VIDEO_PATH), f, "video/mp4")}, timeout=300)
+        print("  📤 Reel — phase 3/3 (finish) avec légende...")
+        r3 = M._req("POST", ep, data={
+            "upload_phase": "finish",
+            "video_id": video_id,
+            "access_token": M.FB_PAGE_ACCESS_TOKEN,
+            "description": legende
+        }, timeout=M.TIMEOUT)
+        print(f"  ✅ Reel publié — Video ID : {video_id}")
+        return r3.json()
+    except requests.exceptions.HTTPError as e:
+        raise M.fb_error(e, "Reel vidéo") from e
+    except OSError as e:
+        raise RuntimeError(f"Fichier vidéo illisible : {e}") from e
+
+
+# ══════════════════════════════════════════════
+#  MAIN
+# ══════════════════════════════════════════════
+def main() -> None:
+    print("=" * 60)
+    print("🎬 Nyavodroid — Multi-formats [Projet Gemini B]")
+    print("=" * 60)
+    M.verify_fb_token()
+    tc = choisir_type_contenu()
+    pilier = choisir_pilier()
+    labels = {"texte_seul": "📝 Texte seul", "image_texte": "🖼️  Image + Texte", "reel": "🎬 Reel vidéo"}
+    print(f"\n📌 Format : {labels[tc]}\n📌 Pilier : {PILLARS[pilier]['label']}"
+          f"\n📌 Heure  : {datetime.now(timezone.utc).strftime('%H:%M UTC')}\n")
+    if tc == "texte_seul":
+        res = publier_texte_seul(pilier)
+    elif tc == "image_texte":
+        res = publier_image_texte(pilier)
+    else:
+        res = publier_reel(pilier)
+    print(f"\n{'='*60}\n✅ TERMINÉ — {labels[tc]}\n   ID : {res.get('id', res.get('video_id','N/A'))}\n{'='*60}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except RuntimeError as e:
+        print(f"\n❌ ERREUR : {e}", file=sys.stderr); sys.exit(1)
+    except KeyError as e:
+        print(f"\n❌ Secret manquant : {e}", file=sys.stderr); sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ Inattendu : {type(e).__name__}: {e}", file=sys.stderr); sys.exit(1)
