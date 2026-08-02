@@ -146,17 +146,20 @@ def incruster_texte_hierarchique(image_in: str, hook: str, explication: str, det
         if abs(ratio_orig - ratio_cible) > 0.05:
             scale_filter = (
                 f"scale={STORY_WIDTH}:{STORY_HEIGHT}:force_original_aspect_ratio=decrease,"
-                f"pad={STORY_WIDTH}:{STORY_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
+                f"pad={STORY_WIDTH}:{STORY_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black,"
+                "format=rgba"
             )
         else:
             scale_filter = (
                 f"scale={STORY_WIDTH}:{STORY_HEIGHT}:force_original_aspect_ratio=increase,"
-                f"crop={STORY_WIDTH}:{STORY_HEIGHT}"
+                f"crop={STORY_WIDTH}:{STORY_HEIGHT},"
+                "format=rgba"
             )
     except Exception:
         scale_filter = (
             f"scale={STORY_WIDTH}:{STORY_HEIGHT}:force_original_aspect_ratio=increase,"
-            f"crop={STORY_WIDTH}:{STORY_HEIGHT}"
+            f"crop={STORY_WIDTH}:{STORY_HEIGHT},"
+            "format=rgba"
         )
 
     # ─── 2. Préparation des textes (wrapping + échappement) ───
@@ -168,9 +171,11 @@ def incruster_texte_hierarchique(image_in: str, hook: str, explication: str, det
     expl_esc = escape_text(expl_wrapped)
     detail_esc = escape_text(detail_wrapped)
 
-    # ─── 3. Filtres de texte ───
-    # Hook : haut, centré, blanc, ombre magenta
-    hook_y = f"{MARGIN}"
+    # ─── 3. Filtres de texte avec positions FIXES (évite les erreurs d'expression ffmpeg) ───
+    # Canvas : 1080 x 1920
+    # Marges : 54 px
+    # Hook : y = 54
+    hook_y = 54
     hook_filtre = (
         f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
         f"text='{hook_esc}':fontcolor=0xFFFFFF:fontsize={HOOK_FONTSIZE}:"
@@ -178,8 +183,8 @@ def incruster_texte_hierarchique(image_in: str, hook: str, explication: str, det
         f"shadowcolor=0xEA4FD9@0.6:shadowx=0:shadowy=4"
     )
 
-    # Explication : sous le hook
-    expl_y = f"{MARGIN}+{HOOK_FONTSIZE}+30"
+    # Explication : sous le hook (54 + 78 + 30 = 162)
+    expl_y = 162
     expl_filtre = (
         f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
         f"text='{expl_esc}':fontcolor=0xFFFFFF:fontsize={EXPL_FONTSIZE}:"
@@ -187,8 +192,8 @@ def incruster_texte_hierarchique(image_in: str, hook: str, explication: str, det
         f"shadowcolor=0x000000@0.4:shadowx=1:shadowy=2"
     )
 
-    # Détail : bas, gris clair
-    detail_y = f"h-{MARGIN}-{DETAIL_FONTSIZE}"
+    # Détail : bas (1920 - 54 - 26 = 1840)
+    detail_y = 1840
     detail_filtre = (
         f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
         f"text='{detail_esc}':fontcolor=0xCCCCCC:fontsize={DETAIL_FONTSIZE}:"
@@ -196,7 +201,9 @@ def incruster_texte_hierarchique(image_in: str, hook: str, explication: str, det
     )
 
     # Combinaison des filtres
-    filtre = f"{scale_filter},{hook_filtre}"
+    filtre = scale_filter
+    if hook:
+        filtre += f",{hook_filtre}"
     if explication:
         filtre += f",{expl_filtre}"
     if detail:
