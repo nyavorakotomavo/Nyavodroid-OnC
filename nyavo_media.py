@@ -151,10 +151,11 @@ def fb_error(e: requests.exceptions.HTTPError, ctx: str) -> RuntimeError:
             err = e.response.json().get("error", {})
             corps = f"[{err.get('type','?')}] {err.get('message','?')} (code {err.get('code','?')})"
         except Exception:
-            corps = e.response.text[:400]
+            corps = e.response.text[:400]  # affiche le corps brut si JSON invalide
+    # Si le message reste désespérément vide, on ajoute le texte brut
+    if corps == "[?] ? (code ?)" or corps.startswith("[?]"):
+        corps = f"Réponse brute : {e.response.text[:400]}"
     return RuntimeError(f"Facebook Graph ({ctx}, HTTP {code}) : {corps}")
-
-
 def verify_fb_token() -> None:
     try:
         r = requests.get(
