@@ -506,14 +506,11 @@ def _generer_images_reel(pilier: str, hooks: list, details: list, sujet: str) ->
         print(f"  🖼️  Scène {i}/{NB_IMAGES_REEL} [{acte['acte']}]...")
         M.image_avec_fallback(prompt, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
 
-        # Incruster le texte (hook + détail) sur l'image
-        incruster_texte_reel(chemin, hook, detail, chemin)
-
-        # Appliquer le watermark
-        M.overlay_expression(chemin, chemin)
-
-        chemins.append(chemin)
-    return chemins
+  # Incruster le texte (hook + détail) et appliquer le watermark
+incruster_texte_reel(chemin, hook, detail, chemin)
+watermarked = f"reel_img_wm_{i}.png"
+M.overlay_expression(chemin, watermarked)
+os.replace(watermarked, chemin)   # remplace l'original
 
 
 def _generer_audio_reel(pilier: str) -> None:
