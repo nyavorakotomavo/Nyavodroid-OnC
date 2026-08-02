@@ -1,11 +1,10 @@
 name: Auto-post Nyavodroid — Story
-- name: Dépendances Python
-  run: pip install "requests>=2.31.0" "Pillow>=10.0.0"
+
 on:
   schedule:
-    - cron: "0 7 * * 1-6"      # 7h UTC
-    - cron: "30 9 * * 1-6"      # 9h30 UTC
-    - cron: "0 17 * * 0,1-6"    # 17h UTC (dimanche inclus)
+    - cron: "0 7 * * 1-6"
+    - cron: "30 9 * * 1-6"
+    - cron: "0 17 * * 0,1-6"
   workflow_dispatch: {}
 
 jobs:
@@ -24,7 +23,7 @@ jobs:
           sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
 
       - name: Dépendances Python
-        run: pip install "requests>=2.31.0"
+        run: pip install "requests>=2.31.0" "Pillow>=10.0.0"
 
       - name: Publier la story
         env:
