@@ -2,9 +2,9 @@ name: Auto-post Nyavodroid — Multi-formats
 
 on:
   schedule:
-    - cron: "0 7 * * 1-6"
-    - cron: "30 9 * * 1-6"
-    - cron: "0 17 * * 0,1-6"
+    - cron: "0 7 * * 1-6"      # 7h UTC → Post Texte seul (image fond Pillow)
+    - cron: "30 9 * * 1-6"      # 9h30 UTC → Post Image + Texte
+    - cron: "0 17 * * 0,1-6"    # 17h UTC → Reel vidéo (dimanche inclus)
   workflow_dispatch: {}
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
           sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
 
       - name: Dépendances Python
-        run: pip install "requests>=2.31.0"
+        run: pip install "requests>=2.31.0" "Pillow>=10.0.0"
 
       - name: Publier le contenu
         env:
@@ -38,4 +38,5 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           FREEAI_API_KEY: ${{ secrets.FREEAI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: python post_content.py
