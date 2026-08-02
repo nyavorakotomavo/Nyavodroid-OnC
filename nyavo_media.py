@@ -624,20 +624,22 @@ def overlay_expression(image_in: str, image_out: str) -> None:
     expressions_dir = "assets/expressions"
     if not os.path.isdir(expressions_dir):
         print("    ⚠️ Dossier expressions introuvable, pas de watermark.")
-        subprocess.run(["cp", image_in, image_out], check=True)
+        if image_in != image_out:
+            subprocess.run(["cp", image_in, image_out], check=True)
         return
 
     emos = [f for f in os.listdir(expressions_dir) if f.lower().endswith('.png')]
     if not emos:
         print("    ⚠️ Aucune expression PNG trouvée.")
-        subprocess.run(["cp", image_in, image_out], check=True)
+        if image_in != image_out:
+            subprocess.run(["cp", image_in, image_out], check=True)
         return
 
     chosen = random.choice(emos)
     emo_path = os.path.join(expressions_dir, chosen)
     print(f"    🎭 Watermark : {chosen}")
 
-    # Détecter l'orientation
+    # Détecter l'orientation de l'expression
     try:
         cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
                "-show_entries", "stream=width,height", "-of", "csv=p=0", emo_path]
@@ -656,12 +658,15 @@ def overlay_expression(image_in: str, image_out: str) -> None:
 
     margin = 40
     overlay_filter = (
-        f"[1:v]scale={new_w}:{new_h}[wm];"
+        f"[1:v]scale={new_w}:{new_h},format=rgba[wm];"
         f"[0:v][wm]overlay=main_w-{new_w}-{margin}:main_h-{new_h}-{margin}"
     )
 
+    # Pour éviter les erreurs quand image_in == image_out, on passe par un fichier temporaire
+    temp_out = image_out + ".tmp.png"
     subprocess.run(
         ["ffmpeg", "-i", image_in, "-i", emo_path, "-filter_complex", overlay_filter,
-         "-frames:v", "1", "-y", image_out],
+         "-frames:v", "1", "-y", temp_out],
         check=True, capture_output=True, text=True
     )
+    os.replace(temp_out, image_out)
