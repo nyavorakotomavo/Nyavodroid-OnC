@@ -1,4 +1,4 @@
-name: Auto-post Nyavo Channel — Multi-formats
+name: Auto-post Nyavodroid — Multi-formats
 
 on:
   schedule:
@@ -37,4 +37,5 @@ jobs:
           FAL_API_KEY: ${{ secrets.FAL_API_KEY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          FREEAI_API_KEY: ${{ secrets.FREEAI_API_KEY }}
         run: python post_content.py
