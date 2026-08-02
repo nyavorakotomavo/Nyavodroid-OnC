@@ -529,6 +529,7 @@ def _assembler_video(images: list, textes: list, sortie: str) -> None:
     audio_existe = os.path.exists(AUDIO_PATH)
     duree_totale = len(images) * DUREE_PAR_IMAGE
 
+    # Silence si aucune musique
     if not audio_existe:
         print("  🔇 'background_music.mp3' absent → génération silence AAC...")
         silence_aac = "silence.m4a"
@@ -549,15 +550,17 @@ def _assembler_video(images: list, textes: list, sortie: str) -> None:
 
     filtres = []
     for i in range(n):
+        # scale + pad (l'image est déjà 1080x1920, donc le scale ne changera rien, mais on le garde par sécurité)
+        # puis conversion en yuv420p obligatoire pour l'encodeur
         filtres.append(
             f"[{i}:v]scale={STORY_WIDTH}:{STORY_HEIGHT}:force_original_aspect_ratio=decrease,"
             f"pad={STORY_WIDTH}:{STORY_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black,"
+            f"format=yuv420p,"
             f"zoompan=z='min(zoom+0.0008,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
             f":d={int(DUREE_PAR_IMAGE*25)}:s={STORY_WIDTH}x{STORY_HEIGHT}:fps=25,"
             f"fade=t=in:st=0:d=0.5,fade=t=out:st={DUREE_PAR_IMAGE-0.5}:d=0.5[scene{i}]")
     filtres.append("".join(f"[scene{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=0[slideshow]")
-    txt = "[slideshow]"
-    filtres.append(txt + "[final]")
+    filtres.append("[slideshow]null[final]")   # juste pour propager le flux vidéo
 
     cmd = ["ffmpeg", *inputs, "-filter_complex", ";".join(filtres),
            "-map", "[final]", "-map", f"{n}:a",
