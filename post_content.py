@@ -476,7 +476,7 @@ def _generer_images_reel(pilier: str, hooks: list, details: list, sujet: str) ->
     label = PILLARS[pilier]["label"]
     chemins = []
     for i, (hook, detail) in enumerate(zip(hooks, details), 1):
-        chemin = f"reel_img_{i}.png"
+        chemin = f"reel_img_{i}.png"          # <-- définition de chemin
         ctx = ""
         if i > 1:
             ctx += f"Scène précédente : « {hooks[i-2]} »\n"
@@ -506,11 +506,16 @@ def _generer_images_reel(pilier: str, hooks: list, details: list, sujet: str) ->
         print(f"  🖼️  Scène {i}/{NB_IMAGES_REEL} [{acte['acte']}]...")
         M.image_avec_fallback(prompt, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
 
-  # Incruster le texte (hook + détail) et appliquer le watermark
-incruster_texte_reel(chemin, hook, detail, chemin)
-watermarked = f"reel_img_wm_{i}.png"
-M.overlay_expression(chemin, watermarked)
-os.replace(watermarked, chemin)   # remplace l'original
+        # Incruster le texte (hook + détail) sur l'image
+        incruster_texte_reel(chemin, hook, detail, chemin)
+
+        # Appliquer le watermark (en passant par un fichier temporaire pour éviter l'écrasement direct)
+        watermarked = f"reel_img_wm_{i}.png"
+        M.overlay_expression(chemin, watermarked)
+        os.replace(watermarked, chemin)       # remplace l'image originale par la version watermarkée
+
+        chemins.append(chemin)
+    return chemins
 
 
 def _generer_audio_reel(pilier: str) -> None:
