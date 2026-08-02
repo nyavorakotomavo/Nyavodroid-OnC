@@ -7,9 +7,10 @@ Alignée sur la ligne éditoriale officielle :
   Axe 3 : Actualité IA, logiciels, gadgets & tendances tech
   Axe 4 : Coulisses des projets Nyavodroid (dev, défis, solutions)
 
-Identité visuelle : violet/magenta profond, formes 3D, glow magenta,
-  fond noir violet (#0A0514 → #120A26), accents orange (#F4511E),
-  cube 3D suggéré. Plus de cyan/rouge néon.
+Identité visuelle : Infographie Narrative d'Expert.
+  Palette premium : violet profond (#2D1B4E), jaune moutarde (#E5B83B),
+  bleu nuit (#1A2A47), accents orange (#F4511E).
+  Composition aérée, badge de sourcing, CTA visuel.
 """
 
 # ──────────────────────────────────────────────
@@ -28,6 +29,7 @@ PILLARS = {
             "serveur", "navigateur", "open source", "framework",
             "base de données", "compilateur", "Linux", "Python",
         ],
+        "categorie": "tech",  # pour décider IA vs Pexels
     },
     "science_tech": {
         "label": "Découvertes Scientifiques & Technologies Émergentes",
@@ -41,6 +43,7 @@ PILLARS = {
             "énergie", "espace", "biotechnologie", "matériau",
             "recherche", "découverte", "futur", "science",
         ],
+        "categorie": "science",
     },
     "actu_ia_tech": {
         "label": "Actualité IA, Logiciels & Tendances Tech",
@@ -54,6 +57,7 @@ PILLARS = {
             "logiciel", "gadget", "startup", "outil", "mise à jour",
             "tendance", "tech", "numérique",
         ],
+        "categorie": "tech",
     },
     "coulisses_nyavo": {
         "label": "Coulisses des Projets Nyavodroid",
@@ -68,6 +72,7 @@ PILLARS = {
             "défi technique", "solution", "architecture", "lancement",
             "backend", "frontend", "déploiement", "code",
         ],
+        "categorie": "tech",
     },
 }
 
@@ -183,29 +188,44 @@ TON_EDITORIAL = (
 )
 
 # ──────────────────────────────────────────────
-# Identité visuelle (style image) — NOUVELLE PALETTE VIOLET/MAGENTA
+# Identité visuelle — NOUVEAU STYLE "INFOGRAPHIE NARRATIVE D'EXPERT"
 # ──────────────────────────────────────────────
 STYLE_IMAGE_SUFFIX = (
-    "deep violet and magenta aesthetic, dark violet-black background (#0A0514), "
-    "floating 3D cubes with magenta glow (#EA4FD9), soft orange accents (#F4511E), "
-    "abstract digital art, code particles floating in space, "
-    "no cyan, no red neon, no circuit boards, no holograms. "
-    "Composition intentional and credible, not artificially smooth. "
-    "Cinematic lighting, high quality, 4k, vertical composition"
+    "premium editorial infographic style, expert narrative design, "
+    "deep violet (#2D1B4E) and midnight blue (#1A2A47) background, "
+    "mustard yellow (#E5B83B) and soft orange (#F4511E) accents, "
+    "clean geometric composition, elegant data visualization elements, "
+    "subtle grid patterns, thin golden lines, airy layout with ample negative space, "
+    "professional typography-ready zones, no clutter, no neon, no circuit boards, "
+    "high-end magazine quality, 4k, vertical composition"
 )
 
 # ──────────────────────────────────────────────
-# Hiérarchie de texte pour les visuels (Problème 1 & 6)
+# Palette pour les fonds générés (posts texte seul)
 # ──────────────────────────────────────────────
-# Tailles en pixels pour un canvas de 1080px de large
-HOOK_FONTSIZE = 78        # Niveau 1 — accroche choc, extra-bold
-EXPL_FONTSIZE = 42        # Niveau 2 — explication, medium
-DETAIL_FONTSIZE = 26      # Niveau 3 — détail/source, regular
+BACKGROUND_GRADIENT = [
+    "#2D1B4E",  # violet profond (prioritaire)
+    "#3D2B5E",  # violet moyen
+    "#1A2A47",  # bleu nuit
+    "#E5B83B",  # jaune moutarde
+    "#F4511E",  # orange
+    "#8B1A4A",  # rouge foncé
+]
 
-# Marge de sécurité : 5% de 1080px = 54px (Problème 2)
+CANVAS_SIZE_TEXTE_SEUL = (1080, 1080)  # format carré pour les posts texte
+
+# ──────────────────────────────────────────────
+# Hiérarchie de texte pour les visuels
+# ──────────────────────────────────────────────
+HOOK_FONTSIZE = 78
+EXPL_FONTSIZE = 42
+DETAIL_FONTSIZE = 26
 MARGIN = 54
+LINE_SPACING = 1.4  # facteur d'espacement des lignes
 
 # ──────────────────────────────────────────────
-# Dossier des expressions (Problème 7)
+# Dossiers des assets
 # ──────────────────────────────────────────────
 EXPRESSIONS_DIR = "assets/expressions"
+PROFILE_IMAGE_PATH = "assets/profile.png"
+EMOJIS_DIR = "assets/emojis"
