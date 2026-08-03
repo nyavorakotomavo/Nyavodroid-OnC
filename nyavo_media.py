@@ -806,3 +806,162 @@ def overlay_watermark(image_in: str, image_out: str, source_text: str = "") -> N
         os.replace(temp, image_out)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ffmpeg watermark échec : {e.stderr[:500]}")
+# ══════════════════════════════════════════════
+#  FOND PILLOW POUR POST TEXTE SEUL
+# ══════════════════════════════════════════════
+def generer_fond_texte_seul(texte: str, chemin: str) -> None:
+    """Génère une image carrée 1080x1080 avec dégradé violet et texte centré (marges réelles)."""
+    w, h = CANVAS_SIZE_TEXTE_SEUL
+    c1 = BACKGROUND_GRADIENT[0]  # violet profond
+    c2 = BACKGROUND_GRADIENT[2]  # bleu nuit
+
+    img = Image.new("RGB", (w, h))
+    draw = ImageDraw.Draw(img)
+    r1, g1, b1 = int(c1[1:3], 16), int(c1[3:5], 16), int(c1[5:7], 16)
+    r2, g2, b2 = int(c2[1:3], 16), int(c2[3:5], 16), int(c2[5:7], 16)
+    for y in range(h):
+        t = y / h
+        r = int(r1 + (r2 - r1) * t)
+        g = int(g1 + (g2 - g1) * t)
+        b = int(b1 + (b2 - b1) * t)
+        draw.line([(0, y), (w, y)], fill=(r, g, b))
+
+    # Wrap mesuré + réduction auto de la police → zéro débordement
+    max_width = w - 2 * CANVAS_MARGIN_TEXTE_SEUL
+    texte_propre = clean_text(texte)
+    font_size = 54
+    lines = [texte_propre]
+    font = get_font(font_size, bold=True)
+    line_stride = 0
+    total_h = 0
+    while font_size >= 30:
+        font = get_font(font_size, bold=True)
+        lines = wrap_text_pillow(texte_propre, font, max_width)
+        ascent, descent = font.getmetrics()
+        line_stride = (ascent + descent) + 12
+        total_h = (ascent + descent) * len(lines) + 12 * (len(lines) - 1)
+        if total_h <= h - 2 * CANVAS_MARGIN_TEXTE_SEUL:
+            break
+        font_size -= 4
+
+    y = (h - total_h) // 2
+    for ln in lines:
+        ln_w = draw.textlength(ln, font=font)
+        x = (w - ln_w) // 2
+        draw.text((x, y), ln, font=font, fill=COLORS["blanc"])
+        y += line_stride
+
+    img.save(chemin)
+
+
+# ══════════════════════════════════════════════
+#  RENDU TEXTE PILLOW — gestion des emojis
+# ══════════════════════════════════════════════
+EMOJI_PATTERN = re.compile(
+    "["
+    "\U0001F300-\U0001F5FF"
+    "\U0001F600-\U0001F64F"
+    "\U0001F680-\U0001F6FF"
+    "\U0001F700-\U0001F77F"
+    "\U0001F780-\U0001F7FF"
+    "\U0001F800-\U0001F8FF"
+    "\U0001F900-\U0001F9FF"
+    "\U0001FA00-\U0001FA6F"
+    "\U0001FA70-\U0001FAFF"
+    "\U00002600-\U000026FF"
+    "\U00002700-\U000027BF"
+    "\U0001F1E6-\U0001F1FF"
+    "]+"
+)
+
+
+def _split_emojis(s: str) -> list:
+    """Découpe une chaîne en segments ('text', ...) et ('emoji', ...)."""
+    segments = []
+    last = 0
+    for m in EMOJI_PATTERN.finditer(s):
+        if m.start() > last:
+            segments.append(("text", s[last:m.start()]))
+        segments.append(("emoji", m.group()))
+        last = m.end()
+    if last < len(s):
+        segments.append(("text", s[last:]))
+    return segments
+
+
+def _get_emoji_path(emoji_char: str) -> str | None:
+    """Retourne le chemin du PNG correspondant à l'emoji, ou None si absent."""
+    if not os.path.isdir(EMOJIS_DIR):
+        return None
+    candidate = emoji_char + ".png"
+    path = os.path.join(EMOJIS_DIR, candidate)
+    if os.path.isfile(path):
+        return path
+    # Séquence multi-codepoints : on tente avec le premier codepoint
+    if len(emoji_char) > 1:
+        path2 = os.path.join(EMOJIS_DIR, emoji_char[0] + ".png")
+        if os.path.isfile(path2):
+            return path2
+    return None
+
+
+def _render_line_with_emojis(img, draw, x_center: float, y: float, line: str,
+                             font, fill, line_height: int) -> None:
+    """Dessine une ligne centrée en remplaçant les emojis par leurs PNG (sinon retirés)."""
+    segments = _split_emojis(line)
+    ascent, descent = font.getmetrics()
+    text_h = ascent + descent
+    emo_size = int(text_h * 0.95)
+
+    # Largeur totale pour centrer la ligne
+    total_w = 0.0
+    for kind, val in segments:
+        if kind == "text":
+            total_w += draw.textlength(val, font=font)
+        else:
+            total_w += emo_size + 4
+
+    x = x_center - total_w / 2
+    for kind, val in segments:
+        if kind == "text":
+            draw.text((x, y), val, font=font, fill=fill)
+            x += draw.textlength(val, font=font)
+        else:
+            emo_path = _get_emoji_path(val)
+            if emo_path:
+                try:
+                    emo_img = Image.open(emo_path).convert("RGBA")
+                    emo_img = emo_img.resize((emo_size, emo_size), Image.LANCZOS)
+                    y_emoji = y + (text_h - emo_size) // 2
+                    img.paste(emo_img, (int(x), int(y_emoji)), emo_img)
+                except Exception:
+                    pass
+            x += emo_size + 4
+
+
+def draw_text_block(img, draw, lines: list, font, x_center: float, y: float,
+                    text_color, box_color=None, padding: int = BOX_BORDER) -> int:
+    """Dessine un bloc de texte (boîte optionnelle + lignes) et retourne la hauteur consommée."""
+    if not lines:
+        return 0
+    ascent, descent = font.getmetrics()
+    text_line_h = ascent + descent
+    line_stride = text_line_h + LINE_SPACING
+
+    widths = [draw.textlength(ln, font=font) for ln in lines]
+    max_w = max(widths)
+    total_h = text_line_h * len(lines) + LINE_SPACING * (len(lines) - 1)
+
+    if box_color is not None:
+        bx1 = x_center - max_w / 2 - padding
+        by1 = y - padding
+        bx2 = x_center + max_w / 2 + padding
+        by2 = y + total_h + padding
+        draw.rectangle([bx1, by1, bx2, by2], fill=box_color)
+
+    cy = y
+    for ln in lines:
+        _render_line_with_emojis(img, draw, x_center, cy, ln, font, text_color, text_line_h)
+        cy += line_stride
+
+    return int(total_h + 2 * padding)
