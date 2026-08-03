@@ -69,17 +69,31 @@ def generer_texte_story():
 
     return pilier, sujet, contexte, fait_choc, consequence, source
 
-
 def generer_image_story(pilier: str, sujet: str, chemin: str) -> None:
-    """Génère une image RÉALISTE et explicative (style photojournalisme)."""
-    # Prompt changé : on veut une vraie photo du sujet, pas de l'abstrait
-    prompt_img = (
-        f"Photojournalism style, realistic high-quality photo of {sujet}, "
-        f"cinematic lighting, 8k resolution, highly detailed, documentary photography. "
-        f"No text, no letters, no watermark."
-    )
-    print(f"  🖼️  Génération image réaliste pour : {sujet}")
-    M.image_avec_fallback(prompt_img, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
+    """Décision dynamique : Pexels pour le réel, IA pour l'abstrait."""
+    categorie = PILLARS[pilier].get("categorie", "tech")
+    use_pexels = (categorie in ["tech", "science"]) 
+
+    if use_pexels:
+        print(f"  🖼️  Recherche photo réelle sur Pexels : {sujet}")
+        success = M.get_image_from_pexels(sujet, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
+        
+        if not success:
+            print(f"  🖼️  Fallback IA sécurisé pour : {sujet}")
+            prompt_img = (
+                f"Professional documentary photography of {sujet}, photorealistic, 8k, sharp focus. "
+                f"NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS, NO TYPOGRAPHY."
+            )
+            M.image_avec_fallback(prompt_img, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
+    else:
+        # Pour les piliers abstraits (ex: coulisses), on va direct en IA créative
+        print(f"  ️  Génération IA conceptuelle pour : {sujet}")
+        prompt_img = (
+            f"Abstract conceptual art representing {sujet}, premium editorial style, "
+            f"deep violet and midnight blue tones, clean composition. "
+            f"ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS."
+        )
+        M.image_avec_fallback(prompt_img, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
 
 
 # ══════════════════════════════════════════════
