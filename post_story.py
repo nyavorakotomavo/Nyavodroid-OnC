@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """
 Nyavodroid — STORY avec hiérarchie de texte dynamique, rendu Pillow,
-watermark double (expression + profil), style Infographie Narrative d'Expert.
+watermark (expression + logo), style Infographie Narrative d'Expert.
+
+Améliorations v2 :
+- Sources vérifiables (année ≤ 2025, jamais de futur)
+- Tronquage automatique des textes trop longs
+- Requête Pexels nettoyée (mots concrets)
+- Cohérence avec nyavo_media.py v2 (safe zones, logo unique)
 """
 
 import os
@@ -24,35 +30,41 @@ STORY_IMAGE_PATH = "story_image.png"
 
 
 # ══════════════════════════════════════════════
-#  GÉNÉRATION DE TEXTE + PROMPT IMAGE RÉALISTE
+#  GÉNÉRATION DE TEXTE — PROMPT CRÉDIBLE
 # ══════════════════════════════════════════════
 def generer_texte_story():
-    """Génère la structure et le prompt image style Cultination."""
+    """Génère une anecdote FACTUELLE avec source réelle (pas de 2026 ni de chiffres inventés)."""
     pilier = random.choices(PILLAR_KEYS, weights=[PILLAR_WEIGHTS[k] for k in PILLAR_KEYS], k=1)[0]
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
 
+    # Prompt renforcé : crédibilité + concision + surlignage
     prompt = (
         "Tu es Nyavodroid. Rédige UNIQUEMENT en français.\n"
-        "Raconte une anecdote fascinante sur le sujet en 2 phrases maximum.\n"
-        "Mets les chiffres et les mots-clés les plus importants entre double astérisques **comme ceci** pour qu'ils soient surlignés.\n"
+        "Raconte une anecdote FACTUELLE sur le sujet en 2 phrases courtes (max 30 mots au total).\n"
+        "Mets les 2-3 MOTS LES PLUS IMPORTANTS entre **astérisques** pour surlignage.\n"
+        "SOURCE OBLIGATOIRE : organisme réel connu + année 2024 ou antérieure (jamais 2025/2026).\n"
+        "Exemples valides : 'Nature 2023', 'INSEE 2022', 'NASA 2024', 'RFC 1035 1987'.\n"
+        "INTERDIT : chiffres inventés, prédictions sur l'avenir, sources floues ('études').\n"
         "Réponds EXACTEMENT en JSON :\n"
-        '{\n  "texte": "Ton texte avec les **mots clés**",\n'
-        '  "source": "Source courte (ex: National Geographic)"\n}\n\n'
-        f"Sujet : {sujet}. {TON_EDITORIAL}"
+        '{\n  "texte": "Texte court avec **mots clés**",\n'
+        '  "source": "Organisme Année"\n}\n\n'
+        f"Sujet : {sujet}."
     )
 
-    print(f"  📝 Génération texte Cultination...\n     Sujet : {sujet}")
+    print(f"  📝 Génération texte story...\n     Sujet : {sujet}")
     brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, "[story]")
     brut = brut.strip()
-    if brut.startswith("```json"): brut = brut[7:]
-    if brut.endswith("```"): brut = brut[:-3]
+    if brut.startswith("```json"):
+        brut = brut[7:]
+    if brut.endswith("```"):
+        brut = brut[:-3]
 
     try:
         data = json.loads(brut)
         texte_complet = data.get("texte", "")
         source = data.get("source", "")
         contexte = ""
-        fait_choc = texte_complet 
+        fait_choc = texte_complet
         consequence = ""
     except Exception:
         print("  ⚠️ JSON invalide, fallback.")
@@ -65,29 +77,40 @@ def generer_texte_story():
 
 
 # ══════════════════════════════════════════════
-#  GÉNÉRATION IMAGE — PEXELS PRIORITAIRE + FALLBACK IA SÉCURISÉ
+#  GÉNÉRATION IMAGE — PEXELS PRIORITAIRE + FALLBACK IA
 # ══════════════════════════════════════════════
 def generer_image_story(pilier: str, sujet: str, chemin: str) -> None:
-    """Décision dynamique : Pexels pour le réel, IA pour l'abstrait."""
+    """Décision dynamique : Pexels (nettoyé) pour le réel, IA pour l'abstrait."""
     categorie = PILLARS[pilier].get("categorie", "tech")
     use_pexels = (categorie in ["tech", "science"])
 
     if use_pexels:
         print(f"  🖼️  [Pexels] Recherche : '{sujet}'")
         success = M.get_image_from_pexels(sujet, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
+        
         if not success:
-            mots = " ".join([m for m in sujet.split() if len(m) > 3]) or sujet
-            print(f"  🖼️  [Pexels] Retry : '{mots}'")
-            success = M.get_image_from_pexels(mots, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
+            # La fonction get_image_from_pexels v2 fait déjà le nettoyage
+            # On tente un dernier fallback avec un seul mot-clé principal
+            mot_principal = sujet.split()[0] if sujet else ""
+            if mot_principal and len(mot_principal) > 3:
+                print(f"  🖼️  [Pexels] Ultime tentative : '{mot_principal}'")
+                success = M.get_image_from_pexels(mot_principal, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
+        
         if not success:
-            print(f"  ⚠️  [Pexels] Echec → Fallback IA")
-            prompt_img = f"Professional documentary photography of {sujet}, photorealistic, 8k. NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS, NO WATERMARKS."
+            print(f"  ⚠️  [Pexels] Échec total → Fallback IA documentaire")
+            prompt_img = (
+                f"Professional documentary photography of {sujet}, photorealistic, 8k, sharp focus. "
+                f"NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS, NO WATERMARKS."
+            )
             M.image_avec_fallback(prompt_img, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
         else:
             print(f"  ✅ [Pexels] Photo réelle utilisée")
     else:
         print(f"  🎨 [IA] Génération conceptuelle pour : {sujet}")
-        prompt_img = f"Abstract conceptual art representing {sujet}, premium editorial style, deep violet and midnight blue tones. NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS."
+        prompt_img = (
+            f"Abstract conceptual art representing {sujet}, premium editorial style, "
+            f"deep violet and midnight blue tones. NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS."
+        )
         M.image_avec_fallback(prompt_img, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
 
 
@@ -95,9 +118,15 @@ def generer_image_story(pilier: str, sujet: str, chemin: str) -> None:
 #  INCRUSTATION TEXTE PILLOW + WATERMARK
 # ══════════════════════════════════════════════
 def incruster_texte_hierarchique(image_in, contexte, fait_choc, consequence, source, image_out):
-    """Incrustation hiérarchique Pillow (story 1080x1920), puis watermark profil+expression."""
+    """Incrustation hiérarchique Pillow (story 1080x1920), puis watermark expression."""
+    # Tronquage de sécurité : jamais de pavé de texte
+    fait_choc = M._truncate(fait_choc, 90) if fait_choc else ""
+    consequence = M._truncate(consequence, 140) if consequence else ""
+    source = M.clean_text(source) if source else ""
+    
     M.incruster_texte_pillow(image_in, contexte, fait_choc, consequence, source,
                              image_out, target_size=(STORY_WIDTH, STORY_HEIGHT))
+    # Watermark expression uniquement (logo déjà ajouté par _apply_logo dans incruster_texte_pillow)
     M.overlay_watermark(image_out, image_out, source_text="")
 
 
@@ -143,7 +172,7 @@ def publier_story(photo_id: str) -> dict:
 # ══════════════════════════════════════════════
 def main() -> None:
     print("=" * 50)
-    print("🎬 Nyavodroid — Story [Premium Cultination]")
+    print("🎬 Nyavodroid — Story [Premium Cultination v2]")
     print("=" * 50)
     M.verify_fb_token()
 
@@ -157,7 +186,7 @@ def main() -> None:
     print("  🖼️  Génération image de fond...")
     generer_image_story(pilier, sujet, "story_raw.png")
 
-    print("  🎨 Incrustation Cultination (encadré + watermark)...")
+    print("  🎨 Incrustation Cultination (logo + texte + watermark)...")
     incruster_texte_hierarchique("story_raw.png", contexte, fait_choc, consequence, source, STORY_IMAGE_PATH)
 
     pid = uploader_photo_non_publiee(STORY_IMAGE_PATH)
