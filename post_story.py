@@ -97,38 +97,27 @@ def generer_image_story(pilier: str, sujet: str, chemin: str) -> None:
 
  ══════════════════════════════════════════════
 #  GÉNÉRATION IMAGE — PEXELS PRIORITAIRE + FALLBACK IA SÉCURISÉ
-# ══════════════════════════════════════════════def generer_image_story(pilier: str, sujet: str, chemin: str) -> None:
-    """Décision dynamique : Pexels pour le réel, IA pour l'abstrait."""
+# ══════════════════════════════════════════════
+def generer_image_story(pilier: str, sujet: str, chemin: str) -> None:
     categorie = PILLARS[pilier].get("categorie", "tech")
     use_pexels = (categorie in ["tech", "science"])
-
     if use_pexels:
         print(f"  🖼️  [Pexels] Recherche : '{sujet}'")
         success = M.get_image_from_pexels(sujet, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
-        
         if not success:
-            mots_simples = " ".join([m for m in sujet.split() if len(m) > 3]) or sujet
-            print(f"  🖼️  [Pexels] Retry simplifié : '{mots_simples}'")
-            success = M.get_image_from_pexels(mots_simples, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
-        
+            mots = " ".join([m for m in sujet.split() if len(m) > 3]) or sujet
+            print(f"  🖼️  [Pexels] Retry : '{mots}'")
+            success = M.get_image_from_pexels(mots, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
         if not success:
-            print(f"  ⚠️  [Pexels] Aucun résultat → Fallback IA documentaire")
-            prompt_img = (
-                f"Professional documentary photography of {sujet}, photorealistic, 8k, sharp focus. "
-                f"ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS, NO TYPOGRAPHY, NO WATERMARKS."
-            )
+            print(f"  ⚠️  [Pexels] Echec → Fallback IA")
+            prompt_img = f"Professional documentary photography of {sujet}, photorealistic, 8k. NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS, NO WATERMARKS."
             M.image_avec_fallback(prompt_img, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
         else:
             print(f"  ✅ [Pexels] Photo réelle utilisée")
     else:
         print(f"  🎨 [IA] Génération conceptuelle pour : {sujet}")
-        prompt_img = (
-            f"Abstract conceptual art representing {sujet}, premium editorial style, "
-            f"deep violet and midnight blue tones, clean composition. "
-            f"ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS."
-        )
+        prompt_img = f"Abstract conceptual art representing {sujet}, premium editorial style, deep violet and midnight blue tones. NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS."
         M.image_avec_fallback(prompt_img, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
-
 
 # ══════════════════════════════════════════════
 #  INCRUSTATION TEXTE PILLOW + WATERMARK
