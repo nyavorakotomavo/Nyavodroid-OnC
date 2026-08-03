@@ -965,3 +965,104 @@ def draw_text_block(img, draw, lines: list, font, x_center: float, y: float,
         cy += line_stride
 
     return int(total_h + 2 * padding)
+# ══════════════════════════════════════════════
+#  REDIMENSIONNEMENT + CENTRAGE (équivalent ffmpeg scale/crop)
+# ══════════════════════════════════════════════
+def _crop_resize_pillow(img, target_size):
+    """Recadre au ratio cible puis redimensionne (remplit le cadre, coupe le surplus)."""
+    tw, th = target_size
+    w, h = img.size
+    target_ratio = tw / th
+    img_ratio = w / h
+    if abs(img_ratio - target_ratio) > 0.02:
+        if img_ratio > target_ratio:
+            new_w = int(h * target_ratio)
+            left = (w - new_w) // 2
+            img = img.crop((left, 0, left + new_w, h))
+        else:
+            new_h = int(w / target_ratio)
+            top = (h - new_h) // 2
+            img = img.crop((0, top, w, top + new_h))
+    return img.resize((tw, th), Image.LANCZOS)
+
+
+def _measure_block_height(lines, font, padding):
+    if not lines:
+        return 0
+    ascent, descent = font.getmetrics()
+    text_line_h = ascent + descent
+    total_h = text_line_h * len(lines) + LINE_SPACING * (len(lines) - 1)
+    return int(total_h + 2 * padding)
+
+
+# ══════════════════════════════════════════════
+#  MOTEUR PRINCIPAL — INCRUSTATION TEXTE PILLOW
+# ══════════════════════════════════════════════
+def incruster_texte_pillow(image_in, contexte, fait_choc, consequence, source,
+                           image_out, target_size):
+    """
+    Rendu hiérarchique 'Cultination' avec Pillow :
+      contexte (boîte sombre) → fait_choc (boîte blanche, texte violet) → conséquence (boîte sombre).
+    Positionnement dynamique mesuré au pixel : zéro chevauchement, boîtes ajustées au texte.
+    La source est épinglée en bas à gauche.
+    target_size : tuple (largeur, hauteur), ex (1080,1350) post ou (1080,1920) story.
+    """
+    w, h = target_size
+    img = Image.open(image_in).convert("RGBA")
+    img = _crop_resize_pillow(img, (w, h))
+    draw = ImageDraw.Draw(img)
+    x_center = w / 2
+    max_width = w - 2 * MARGIN
+
+    contexte = clean_text(contexte) if contexte else ""
+    fait_choc = clean_text(fait_choc) if fait_choc else ""
+    consequence = clean_text(consequence) if consequence else ""
+    source = clean_text(source) if source else ""
+
+    font_ctx = get_font(ACCROCHE_FONTSIZE, bold=False)
+    font_fait = get_font(FAIT_CHOC_FONTSIZE, bold=True)
+    font_cons = get_font(CONSEQUENCE_FONTSIZE, bold=False)
+    font_src = get_font(SOURCE_FONTSIZE, bold=False)
+
+    usable_width = max_width - 2 * BOX_BORDER
+    ctx_lines = wrap_text_pillow(contexte, font_ctx, usable_width) if contexte else []
+    fait_lines = wrap_text_pillow(fait_choc, font_fait, usable_width) if fait_choc else []
+    cons_lines = wrap_text_pillow(consequence, font_cons, usable_width) if consequence else []
+
+    gap = 36
+    h_ctx = _measure_block_height(ctx_lines, font_ctx, BOX_BORDER)
+    h_fait = _measure_block_height(fait_lines, font_fait, BOX_BORDER)
+    h_cons = _measure_block_height(cons_lines, font_cons, BOX_BORDER)
+
+    blocks = [bh for bh in (h_ctx, h_fait, h_cons) if bh > 0]
+    total_h = sum(blocks) + gap * (len(blocks) - 1) if blocks else 0
+
+    # Centrage vertical du groupe (borné par la marge haute)
+    y = max(MARGIN, (h - total_h) // 2)
+
+    if ctx_lines:
+        consumed = draw_text_block(img, draw, ctx_lines, font_ctx, x_center, y,
+                                   COLORS["blanc"], box_color=BOX_BG["noir_translucide"])
+        y += consumed + gap
+    if fait_lines:
+        consumed = draw_text_block(img, draw, fait_lines, font_fait, x_center, y,
+                                   COLORS["violet_profond"], box_color=BOX_BG["blanc_opaque"])
+        y += consumed + gap
+    if cons_lines:
+        consumed = draw_text_block(img, draw, cons_lines, font_cons, x_center, y,
+                                   COLORS["blanc"], box_color=BOX_BG["noir_translucide"])
+        y += consumed + gap
+
+    # SOURCE — bas gauche, gris clair, sans boîte
+    if source:
+        src_lines = wrap_text_pillow("Source : " + source, font_src, max_width)
+        ascent, descent = font_src.getmetrics()
+        src_line_h = ascent + descent
+        src_stride = src_line_h + 6
+        total_src_h = src_line_h * len(src_lines) + 6 * (len(src_lines) - 1)
+        sy = h - MARGIN - total_src_h
+        for ln in src_lines:
+            draw.text((MARGIN, sy), ln, font=font_src, fill=COLORS["gris_clair"])
+            sy += src_stride
+
+    img.convert("RGB").save(image_out)
