@@ -994,75 +994,134 @@ def _measure_block_height(lines, font, padding):
     total_h = text_line_h * len(lines) + LINE_SPACING * (len(lines) - 1)
     return int(total_h + 2 * padding)
 
-
 # ══════════════════════════════════════════════
-#  MOTEUR PRINCIPAL — INCRUSTATION TEXTE PILLOW
+#  MOTEUR PRINCIPAL — STYLE "CULTINATION"
 # ══════════════════════════════════════════════
 def incruster_texte_pillow(image_in, contexte, fait_choc, consequence, source,
                            image_out, target_size):
     """
-    Rendu hiérarchique 'Cultination' avec Pillow :
-      contexte (boîte sombre) → fait_choc (boîte blanche, texte violet) → conséquence (boîte sombre).
-    Positionnement dynamique mesuré au pixel : zéro chevauchement, boîtes ajustées au texte.
-    La source est épinglée en bas à gauche.
-    target_size : tuple (largeur, hauteur), ex (1080,1350) post ou (1080,1920) story.
+    Rendu style 'Cultination' :
+      - Badge CULTINATION en haut à gauche.
+      - Dégradé noir franc en bas.
+      - Texte centré en bas, gras, avec ombre portée.
+      - Surlignage blanc automatique pour les mots entre **astérisques**.
     """
     w, h = target_size
     img = Image.open(image_in).convert("RGBA")
     img = _crop_resize_pillow(img, (w, h))
+    
+    # 1. Dégradé noir en bas (plus franc pour le style Cultination)
+    gradient = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    draw_grad = ImageDraw.Draw(gradient)
+    grad_height = int(h * 0.5) 
+    for y in range(grad_height):
+        # Courbe exponentielle pour un noir plus dense en bas
+        alpha = int(240 * ((y / grad_height) ** 1.5))
+        draw_grad.line([(0, h - grad_height + y), (w, h - grad_height + y)], fill=(0, 0, 0, alpha))
+    img = Image.alpha_composite(img, gradient)
+    
+    # 2. Badge "CULTINATION" en haut à gauche
     draw = ImageDraw.Draw(img)
-    x_center = w / 2
+    font_badge = get_font(28, bold=True)
+    badge_text = "CULTINATION"
+    bbox_badge = draw.textbbox((0, 0), badge_text, font=font_badge)
+    bw, bh = bbox_badge[2] - bbox_badge[0], bbox_badge[3] - bbox_badge[1]
+    pad_x, pad_y = 16, 8
+    # Rectangle blanc
+    draw.rectangle([MARGIN, MARGIN, MARGIN + bw + 2*pad_x, MARGIN + bh + 2*pad_y], fill=COLORS["blanc"])
+    # Texte noir
+    draw.text((MARGIN + pad_x, MARGIN + pad_y - 2), badge_text, font=font_badge, fill=COLORS["noir"])
+
+    # 3. Préparation du texte combiné
+    # On fusionne contexte + fait_choc + conséquence en une narration fluide
+    full_text = f"{contexte} {fait_choc} {consequence}".strip()
+    if not full_text:
+        full_text = "..."
+    full_text = clean_text(full_text)
+    
+    # 4. Configuration Police
+    font_size = 46 
+    font = get_font(font_size, bold=True)
     max_width = w - 2 * MARGIN
+    
+    # Wrap manuel qui respecte les ** pour le surlignage
+    # On split d'abord par espace, mais on garde les ** attachés aux mots
+    words = full_text.split()
+    lines = []
+    current_line = []
+    current_width = 0
+    
+    for word in words:
+        # Mesure approximative (on enlève les ** pour la mesure visuelle réelle)
+        clean_word = word.replace("**", "")
+        word_w = draw.textlength(clean_word, font=font)
+        space_w = draw.textlength(" ", font=font) if current_line else 0
+        
+        if current_width + word_w + space_w <= max_width:
+            current_line.append(word)
+            current_width += word_w + space_w
+        else:
+            if current_line:
+                lines.append(current_line)
+            current_line = [word]
+            current_width = word_w
+    if current_line:
+        lines.append(current_line)
 
-    contexte = clean_text(contexte) if contexte else ""
-    fait_choc = clean_text(fait_choc) if fait_choc else ""
-    consequence = clean_text(consequence) if consequence else ""
-    source = clean_text(source) if source else ""
+    # 5. Calcul position (bloc en bas)
+    ascent, descent = font.getmetrics()
+    line_h = ascent + descent
+    line_stride = line_h + 16
+    total_h = line_h * len(lines) + 16 * (len(lines) - 1)
+    
+    start_y = h - MARGIN - total_h - 60 # Espace pour la source
+    
+    # 6. Dessin ligne par ligne avec gestion du surlignage
+    y = start_y
+    for line_words in lines:
+        # Calcul de la largeur totale de la ligne pour centrer
+        line_total_w = 0
+        processed_words = []
+        for word in line_words:
+            is_highlight = word.startswith("**") and word.endswith("**")
+            clean_w = word.replace("**", "")
+            w_word = draw.textlength(clean_w, font=font)
+            
+            if is_highlight:
+                # Largeur avec padding pour le fond blanc
+                w_word += 24 
+            processed_words.append((clean_w, is_highlight, w_word))
+            line_total_w += w_word + 8 # 8px d'espace entre mots
+        
+        # Position X de départ (centrée)
+        x_cursor = (w - line_total_w) // 2
+        
+        for clean_w, is_highlight, w_word in processed_words:
+            if is_highlight:
+                # Dessin du fond blanc
+                pad_hl = 12
+                hl_h = line_h + 8
+                draw.rectangle(
+                    [x_cursor, y - 4, x_cursor + w_word, y + hl_h - 4], 
+                    fill=COLORS["blanc"]
+                )
+                # Texte noir dessus
+                draw.text((x_cursor + pad_hl, y), clean_w, font=font, fill=COLORS["noir"])
+                x_cursor += w_word + 8
+            else:
+                # Texte blanc avec ombre portée noire (simulée par un décalage)
+                draw.text((x_cursor + 2, y + 2), clean_w, font=font, fill=(0, 0, 0, 180)) # Ombre
+                draw.text((x_cursor, y), clean_w, font=font, fill=COLORS["blanc"])
+                x_cursor += w_word + 8
+                
+        y += line_stride
 
-    font_ctx = get_font(ACCROCHE_FONTSIZE, bold=False)
-    font_fait = get_font(FAIT_CHOC_FONTSIZE, bold=True)
-    font_cons = get_font(CONSEQUENCE_FONTSIZE, bold=False)
-    font_src = get_font(SOURCE_FONTSIZE, bold=False)
-
-    usable_width = max_width - 2 * BOX_BORDER
-    ctx_lines = wrap_text_pillow(contexte, font_ctx, usable_width) if contexte else []
-    fait_lines = wrap_text_pillow(fait_choc, font_fait, usable_width) if fait_choc else []
-    cons_lines = wrap_text_pillow(consequence, font_cons, usable_width) if consequence else []
-
-    gap = 36
-    h_ctx = _measure_block_height(ctx_lines, font_ctx, BOX_BORDER)
-    h_fait = _measure_block_height(fait_lines, font_fait, BOX_BORDER)
-    h_cons = _measure_block_height(cons_lines, font_cons, BOX_BORDER)
-
-    blocks = [bh for bh in (h_ctx, h_fait, h_cons) if bh > 0]
-    total_h = sum(blocks) + gap * (len(blocks) - 1) if blocks else 0
-
-    # Centrage vertical du groupe (borné par la marge haute)
-    y = max(MARGIN, (h - total_h) // 2)
-
-    if ctx_lines:
-        consumed = draw_text_block(img, draw, ctx_lines, font_ctx, x_center, y,
-                                   COLORS["blanc"], box_color=BOX_BG["noir_translucide"])
-        y += consumed + gap
-    if fait_lines:
-        consumed = draw_text_block(img, draw, fait_lines, font_fait, x_center, y,
-                                   COLORS["violet_profond"], box_color=BOX_BG["blanc_opaque"])
-        y += consumed + gap
-    if cons_lines:
-        consumed = draw_text_block(img, draw, cons_lines, font_cons, x_center, y,
-                                   COLORS["blanc"], box_color=BOX_BG["noir_translucide"])
-        y += consumed + gap
-
-    # SOURCE — bas gauche, gris clair, sans boîte
+    # 7. Source (tout en bas, petit)
     if source:
-        src_lines = wrap_text_pillow("Source : " + source, font_src, max_width)
-        ascent, descent = font_src.getmetrics()
-        src_line_h = ascent + descent
-        src_stride = src_line_h + 6
-        total_src_h = src_line_h * len(src_lines) + 6 * (len(src_lines) - 1)
-        sy = h - MARGIN - total_src_h
-        for ln in src_lines:
-            draw.text((MARGIN, sy), ln, font=font_src, fill=COLORS["gris_clair"])
-            sy += src_stride
+        font_src = get_font(22, bold=False)
+        src_text = clean_text(source)
+        # Centré aussi
+        src_w = draw.textlength(f"Source : {src_text}", font=font_src)
+        draw.text(((w - src_w)//2, h - MARGIN - 25), f"Source : {src_text}", font=font_src, fill=COLORS["gris_clair"])
 
     img.convert("RGB").save(image_out)
