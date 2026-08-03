@@ -97,8 +97,7 @@ def generer_image_story(pilier: str, sujet: str, chemin: str) -> None:
 
  ══════════════════════════════════════════════
 #  GÉNÉRATION IMAGE — PEXELS PRIORITAIRE + FALLBACK IA SÉCURISÉ
-# ══════════════════════════════════════════════
-def generer_image_story(pilier: str, sujet: str, chemin: str) -> None:
+# ══════════════════════════════════════════════def generer_image_story(pilier: str, sujet: str, chemin: str) -> None:
     """Décision dynamique : Pexels pour le réel, IA pour l'abstrait."""
     categorie = PILLARS[pilier].get("categorie", "tech")
     use_pexels = (categorie in ["tech", "science"])
