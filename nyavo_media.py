@@ -359,3 +359,131 @@ def _i_gemini(prompt: str, chemin: str, gemini_key: str, size: tuple[int, int]) 
             print(f"    ⚠️ Gemini {modele} : {sanitize_log(str(e))}")
             continue
     raise RuntimeError(f"Gemini image KO (tous modèles) : {sanitize_log(str(derniere))}")
+def _i_hf(prompt: str, chemin: str, size: tuple[int, int]) -> None:
+    w, h = size
+    r = _req(
+        "POST", f"{HF_INFER_URL}{HF_IMAGE_MODEL}",
+        headers={"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "application/json"},
+        json_data={"inputs": prompt, "parameters": {"width": w, "height": h}},
+        timeout=120, max_retries=2, retry_delay=8,
+    )
+    ct = r.headers.get("Content-Type", "")
+    if "image" not in ct:
+        raise ValueError(f"réponse non-image ({ct}) : {r.text[:200]}")
+    with open(chemin, "wb") as f:
+        f.write(r.content)
+
+
+def _i_together(prompt: str, chemin: str, size: tuple[int, int]) -> None:
+    w, h = size
+    r = _req(
+        "POST", TOGETHER_IMAGE_URL,
+        headers={"Authorization": f"Bearer {TOGETHER_API_KEY}", "Content-Type": "application/json"},
+        json_data={"model": TOGETHER_IMAGE_MODEL, "prompt": prompt,
+                   "width": w, "height": h, "n": 1, "response_format": "b64_json"},
+        timeout=120,
+    )
+    b64 = r.json()["data"][0]["b64_json"]
+    with open(chemin, "wb") as f:
+        f.write(base64.b64decode(b64))
+
+
+def _i_fal(prompt: str, chemin: str) -> None:
+    r = _req(
+        "POST", FAL_IMAGE_URL,
+        headers={"Authorization": f"Key {FAL_API_KEY}", "Content-Type": "application/json"},
+        json_data={
+            "prompt": prompt,
+            "image_size": "square_hd",
+            "num_inference_steps": 28,
+            "guidance_scale": 3.5,
+            "num_images": 1,
+            "enable_safety_checker": False,
+        },
+        timeout=120,
+    )
+    data = r.json()
+    img_url = data.get("images", [None])[0]
+    if not img_url or not img_url.get("url"):
+        raise ValueError(f"Fal.ai réponse invalide : {data}")
+    img_data = requests.get(img_url["url"], timeout=60).content
+    with open(chemin, "wb") as f:
+        f.write(img_data)
+
+
+def _i_cloudflare(prompt: str, chemin: str) -> None:
+    url = f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/{CLOUDFLARE_MODEL}"
+    r = _req(
+        "POST", url,
+        headers={"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}", "Content-Type": "application/json"},
+        json_data={
+            "prompt": prompt,
+            "num_steps": 4,
+            "negative_prompt": "no text, no letters, no numbers, no typography, no watermark, no logo, no captions",
+        },
+        timeout=60,
+    )
+    data = r.json()
+    if not data.get("success"):
+        raise ValueError(f"Cloudflare erreur : {data}")
+    b64 = data.get("result", {}).get("image")
+    if not b64:
+        raise ValueError(f"Cloudflare pas d'image : {data}")
+    with open(chemin, "wb") as f:
+        f.write(base64.b64decode(b64))
+
+
+def _i_pollinations(prompt: str, chemin: str) -> None:
+    encoded = urllib.parse.quote(prompt, safe='')
+    url = f"{POLLINATIONS_URL}{encoded}?width={POLL_W}&height={POLL_H}&nologo=true&enhance=true"
+    r = _req("GET", url, headers={"User-Agent": "Nyavodroid/1.0"}, timeout=120, stream=True)
+    with open(chemin, "wb") as f:
+        for chunk in r.iter_content(chunk_size=8192):
+            f.write(chunk)
+
+
+# ══════════════════════════════════════════════
+#  PEXELS — recherche de photos réelles
+# ══════════════════════════════════════════════
+def search_pexels(query: str, orientation: str = "portrait", per_page: int = 5) -> list[dict]:
+    if not PEXELS_API_KEY:
+        return []
+    try:
+        r = requests.get(
+            PEXELS_SEARCH_URL,
+            headers={"Authorization": PEXELS_API_KEY},
+            params={"query": query, "orientation": orientation, "per_page": per_page},
+            timeout=15,
+        )
+        if r.status_code != 200:
+            print(f"    ⚠️ Pexels erreur {r.status_code} : {r.text[:200]}")
+            return []
+        data = r.json()
+        return data.get("photos", [])
+    except Exception as e:
+        print(f"    ⚠️ Pexels exception : {e}")
+        return []
+
+
+def download_pexels_image(photo: dict, chemin: str, size: tuple[int, int] | None = None) -> bool:
+    try:
+        img_url = photo["src"]["original"]
+        r = requests.get(img_url, timeout=30)
+        if r.status_code != 200:
+            return False
+        with open(chemin, "wb") as f:
+            f.write(r.content)
+        if size:
+            crop_to_ratio(chemin, chemin, target_size=size)
+        return True
+    except Exception as e:
+        print(f"    ⚠️ Pexels download : {e}")
+        return False
+
+
+def get_image_from_pexels(query: str, chemin: str, size: tuple[int, int] | None = None) -> bool:
+    photos = search_pexels(query)
+    for photo in photos:
+        if download_pexels_image(photo, chemin, size):
+            return True
+    return False
