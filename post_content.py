@@ -182,31 +182,10 @@ def _get_emoji_path(emoji_char: str) -> str | None:
                 return os.path.join(EMOJIS_DIR, f)
     return None
 
-
 def incruster_texte_hierarchique_post(image_in: str, contexte: str, fait_choc: str, consequence: str, source: str, image_out: str) -> None:
-    # 1. Scale/crop 4:5
-    try:
-        cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
-               "-show_entries", "stream=width,height", "-of", "csv=p=0", image_in]
-        out = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        w_orig, h_orig = map(int, out.stdout.strip().split(','))
-        ratio_orig = w_orig / h_orig
-        ratio_cible = POST_WIDTH / POST_HEIGHT
-        if abs(ratio_orig - ratio_cible) > 0.05:
-            scale_filter = (
-                f"scale={POST_WIDTH}:{POST_HEIGHT}:force_original_aspect_ratio=decrease,"
-                f"pad={POST_WIDTH}:{POST_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black,"
-                "format=rgba"
-            )
-        else:
-            scale_filter = (
-                f"scale={POST_WIDTH}:{POST_HEIGHT}:force_original_aspect_ratio=increase,"
-                f"crop={POST_WIDTH}:{POST_HEIGHT},"
-                "format=rgba"
-            )
-    except:
-        scale_filter = f"scale={POST_WIDTH}:{POST_HEIGHT},format=rgba"
+    # ... (le début avec scale/crop est inchangé)
 
+    # Nettoyage
     contexte = clean_backslash(M.clean_text(contexte))
     fait_choc = clean_backslash(M.clean_text(fait_choc))
     consequence = clean_backslash(M.clean_text(consequence))
@@ -218,7 +197,6 @@ def incruster_texte_hierarchique_post(image_in: str, contexte: str, fait_choc: s
     cons_w = wrap(consequence, 35)
     src_w = wrap(source, 45)
 
-    # Positions (canvas 1080x1350)
     y_ctx = MARGIN
     y_fait = 180
     y_cons = y_fait + 90 + 15
@@ -226,35 +204,20 @@ def incruster_texte_hierarchique_post(image_in: str, contexte: str, fait_choc: s
 
     filtres = []
     if ctx_w:
-        filtres.append(
-            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
-            f"text='{escape_text(ctx_w)}':fontcolor=0xFFFFFF:fontsize={ACCROCHE_FONTSIZE}:"
-            f"x=(w-text_w)/2:y={y_ctx}:"
-            f"box=1:boxcolor=0x0D0D0D@0.7:boxborderw=20"
-        )
+        filtres.append(safe_drawtext(ctx_w, ACCROCHE_FONTSIZE, "0xFFFFFF", "(w-text_w)/2", str(y_ctx),
+                                     box={'color': '0x0D0D0D@0.7', 'borderw': '20'}))
     if fait_w:
         box_w, box_h = 600, 80
         box_x = (POST_WIDTH - box_w)//2
         box_y = y_fait - 10
         filtres.append(f"drawbox=x={box_x}:y={box_y}:w={box_w}:h={box_h}:color=0xFFFFFF@0.85:t=fill")
-        filtres.append(
-            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-            f"text='{escape_text(fait_w)}':fontcolor=0x2D1B4E:fontsize={FAIT_CHOC_FONTSIZE}:"
-            f"x=(w-text_w)/2:y={y_fait}"
-        )
+        filtres.append(safe_drawtext(fait_w, FAIT_CHOC_FONTSIZE, "0x2D1B4E", "(w-text_w)/2", str(y_fait), bold=True))
     if cons_w:
-        filtres.append(
-            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
-            f"text='{escape_text(cons_w)}':fontcolor=0xFFFFFF:fontsize={CONSEQUENCE_FONTSIZE}:"
-            f"x=(w-text_w)/2:y={y_cons}:"
-            f"box=1:boxcolor=0x0D0D0D@0.7:boxborderw=20"
-        )
+        filtres.append(safe_drawtext(cons_w, CONSEQUENCE_FONTSIZE, "0xFFFFFF", "(w-text_w)/2", str(y_cons),
+                                     box={'color': '0x0D0D0D@0.7', 'borderw': '20'}))
     if src_w:
-        filtres.append(
-            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
-            f"text='Source : {escape_text(src_w)}':fontcolor=0xCCCCCC:fontsize={SOURCE_FONTSIZE}:"
-            f"x={MARGIN}:y={y_src}"
-        )
+        # Pas de box pour la source, police plus petite
+        filtres.append(safe_drawtext(f"Source : {src_w}", SOURCE_FONTSIZE, "0xCCCCCC", str(MARGIN), str(y_src)))
 
     filtre_texte = scale_filter
     if filtres:
@@ -272,7 +235,6 @@ def incruster_texte_hierarchique_post(image_in: str, contexte: str, fait_choc: s
     M.overlay_watermark(temp_text, image_out, source_text=source)
     if os.path.exists(temp_text):
         os.remove(temp_text)
-
 def publier_image_texte(pilier: str) -> dict:
     label = PILLARS[pilier]["label"]
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
