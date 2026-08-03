@@ -24,43 +24,62 @@ STORY_IMAGE_PATH = "story_image.png"
 
 
 # ══════════════════════════════════════════════
-#  GÉNÉRATION DE TEXTE HIÉRARCHISÉ (JSON)
+#  GÉNÉRATION DE TEXTE + PROMPT IMAGE RÉALISTE
 # ══════════════════════════════════════════════
 def generer_texte_story():
-    """Génère la structure contexte / fait_choc / consequence / source en français."""
+    """Génère la structure et le prompt image style Cultination."""
     pilier = random.choices(PILLAR_KEYS, weights=[PILLAR_WEIGHTS[k] for k in PILLAR_KEYS], k=1)[0]
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
 
+    # Prompt modifié pour le style Cultination + surlignage
     prompt = (
-        "Tu es Nyavodroid. Rédige UNIQUEMENT en français et en respectant EXACTEMENT ce format JSON :\n"
-        '{\n  "contexte": "1 phrase de contexte général",\n'
-        '  "fait_choc": "le chiffre ou fait surprenant (max 8 mots)",\n'
-        '  "consequence": "1 phrase de conséquence concrète",\n'
-        '  "source": "source vérifiable (ex: Nature, 2026)"\n}\n\n'
-        f"Sujet imposé : {sujet}. {TON_EDITORIAL}"
+        "Tu es Nyavodroid. Rédige UNIQUEMENT en français.\n"
+        "Raconte une anecdote fascinante sur le sujet en 2 phrases maximum.\n"
+        "Mets les chiffres et les mots-clés les plus importants entre double astérisques **comme ceci** pour qu'ils soient surlignés.\n"
+        "Réponds EXACTEMENT en JSON :\n"
+        '{\n  "texte": "Ton texte avec les **mots clés**",\n'
+        '  "source": "Source courte (ex: National Geographic)"\n}\n\n'
+        f"Sujet : {sujet}. {TON_EDITORIAL}"
     )
+    
     print(f"  📝 Génération texte Cultination...\n     Sujet : {sujet}")
     brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, "[story]")
     brut = brut.strip()
-    if brut.startswith("```json"):
-        brut = brut[7:]
-    if brut.endswith("```"):
-        brut = brut[:-3]
+    if brut.startswith("```json"): brut = brut[7:]
+    if brut.endswith("```"): brut = brut[:-3]
+    
     try:
         data = json.loads(brut)
-        contexte = data.get("contexte", "")
-        fait_choc = data.get("fait_choc", "")
-        consequence = data.get("consequence", "")
+        texte_complet = data.get("texte", "")
         source = data.get("source", "")
+        
+        # On parse le texte pour remplir les champs attendus par la fonction d'incrustation
+        # On met tout dans 'fait_choc' car notre nouvelle fonction fusionne tout, 
+        # mais on garde la structure pour la compatibilité
+        contexte = ""
+        fait_choc = texte_complet 
+        consequence = ""
+        
     except Exception:
-        # fallback : on découpe le texte brut en trois lignes max
-        lignes = [l.strip() for l in brut.split('\n') if l.strip()]
-        contexte = lignes[0] if len(lignes) > 0 else ""
-        fait_choc = lignes[1] if len(lignes) > 1 else ""
-        consequence = lignes[2] if len(lignes) > 2 else ""
+        print("  ⚠️ JSON invalide, fallback.")
+        contexte = brut
+        fait_choc = ""
+        consequence = ""
         source = ""
 
     return pilier, sujet, contexte, fait_choc, consequence, source
+
+
+def generer_image_story(pilier: str, sujet: str, chemin: str) -> None:
+    """Génère une image RÉALISTE et explicative (style photojournalisme)."""
+    # Prompt changé : on veut une vraie photo du sujet, pas de l'abstrait
+    prompt_img = (
+        f"Photojournalism style, realistic high-quality photo of {sujet}, "
+        f"cinematic lighting, 8k resolution, highly detailed, documentary photography. "
+        f"No text, no letters, no watermark."
+    )
+    print(f"  🖼️  Génération image réaliste pour : {sujet}")
+    M.image_avec_fallback(prompt_img, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
 
 
 # ══════════════════════════════════════════════
