@@ -179,11 +179,10 @@ def incruster_texte_hierarchique(image_in: str, contexte: str, fait_choc: str, c
             f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
             f"text='{escape_text(ctx_w)}':fontcolor=0xFFFFFF:fontsize={ACCROCHE_FONTSIZE}:"
             f"x=(w-text_w)/2:y={y_ctx}:"
-            f"box=1:boxcolor=0x0D0D0D@0.7:boxborderw=20:"
-            f"shadowcolor=0x000000@0.3:shadowx=1:shadowy=2"
+            f"box=1:boxcolor=0x0D0D0D@0.7:boxborderw=20"
         )
     if fait_w:
-        # Encadré blanc fort
+        # Encadré blanc, texte violet sans ombre
         box_w, box_h = 600, 80
         box_x = (STORY_WIDTH - box_w)//2
         box_y = y_fait - 10
