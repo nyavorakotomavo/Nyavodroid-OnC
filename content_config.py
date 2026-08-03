@@ -179,13 +179,17 @@ STORY_PROMPTS = [
 # ──────────────────────────────────────────────
 # Ton éditorial
 # ──────────────────────────────────────────────
+# ──────────────────────────────────────────────
+# Ton éditorial (français impératif, formule Cultination)
+# ──────────────────────────────────────────────
 TON_EDITORIAL = (
-    "Vulgarisation captivante et accessible. Ton dynamique, immersif, "
-    "légèrement mystérieux. Comme si tu révélais un secret au lecteur. "
-    "Phrases courtes et percutantes. Pas de jargon inutile, mais "
-    "toujours un terme technique précis pour crédibiliser. "
-    "Tutoiement implicite. Pas de formules creuses."
+    "Rédige UNIQUEMENT en français. "
+    "Sois extrêmement concis : maximum 3 phrases. "
+    "Structure : [contexte général] → [FAIT CHOC avec un chiffre précis] → [conséquence concrète]. "
+    "Jamais d’abstraction, jamais de comparaison vague. "
+    "Le fait choc doit être surprenant et vérifiable."
 )
+
 
 # ──────────────────────────────────────────────
 # Identité visuelle — NOUVEAU STYLE "INFOGRAPHIE NARRATIVE D'EXPERT"
@@ -217,12 +221,14 @@ CANVAS_SIZE_TEXTE_SEUL = (1080, 1080)  # format carré pour les posts texte
 # ──────────────────────────────────────────────
 # Hiérarchie de texte pour les visuels
 # ──────────────────────────────────────────────
-HOOK_FONTSIZE = 78
-EXPL_FONTSIZE = 42
-DETAIL_FONTSIZE = 26
+# ──────────────────────────────────────────────
+# Tailles de police pour la nouvelle hiérarchie visuelle
+# ──────────────────────────────────────────────
+ACCROCHE_FONTSIZE = 44          # phrase de contexte en haut
+FAIT_CHOC_FONTSIZE = 58         # chiffre / fait marquant (dans l'encadré)
+CONSEQUENCE_FONTSIZE = 28       # conséquence en dessous
+SOURCE_FONTSIZE = 22            # source en bas
 MARGIN = 54
-LINE_SPACING = 1.4  # facteur d'espacement des lignes
-
 # ──────────────────────────────────────────────
 # Dossiers des assets
 # ──────────────────────────────────────────────
