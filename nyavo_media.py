@@ -995,14 +995,14 @@ def _measure_block_height(lines, font, padding):
     return int(total_h + 2 * padding)
 
 # ══════════════════════════════════════════════
-#  MOTEUR PRINCIPAL — HIÉRARCHIE + LOGO NYAVODROID
+#  MOTEUR PRINCIPAL — HIÉRARCHIE + LOGO NYAVODROID (v2 corrigée)
 # ══════════════════════════════════════════════
 def incruster_texte_pillow(image_in, contexte, fait_choc, consequence, source,
                            image_out, target_size):
     w, h = target_size
     img = Image.open(image_in).convert("RGBA")
     img = _crop_resize_pillow(img, (w, h))
-    
+
     # 1. Dégradé noir en bas
     gradient = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw_grad = ImageDraw.Draw(gradient)
@@ -1013,87 +1013,114 @@ def incruster_texte_pillow(image_in, contexte, fait_choc, consequence, source,
     img = Image.alpha_composite(img, gradient)
     draw = ImageDraw.Draw(img)
 
-    # 2. LOGO NYAVODROID (Remplacement du badge Cultination)
-    logo_path = PROFILE_IMAGE_PATH # assets/profile.png
+    # 2. LOGO NYAVODROID (avec log debug)
+    logo_path = PROFILE_IMAGE_PATH
+    print(f"  🔍 Recherche logo : {logo_path} → {'✅ Trouvé' if os.path.isfile(logo_path) else '❌ Absent'}")
+    
     if os.path.isfile(logo_path):
         try:
             logo = Image.open(logo_path).convert("RGBA")
-            # Redimensionner le logo (ex: 100px de large)
             logo_size = 100
             logo = logo.resize((logo_size, logo_size), Image.LANCZOS)
-            
-            # Création d'un masque circulaire pour le logo (optionnel, plus propre)
             mask = Image.new("L", (logo_size, logo_size), 0)
             ImageDraw.Draw(mask).ellipse((0, 0, logo_size, logo_size), fill=255)
-            
-            # Position : Haut Gauche
-            pos_x, pos_y = MARGIN, MARGIN
-            img.paste(logo, (pos_x, pos_y), mask)
+            img.paste(logo, (MARGIN, MARGIN), mask)
         except Exception as e:
             print(f"⚠️ Erreur chargement logo : {e}")
+    else:
+        print(f"⚠️ Logo introuvable. Vérifie que le fichier s'appelle bien '{PROFILE_IMAGE_PATH}' (attention à l'orthographe profile vs profil)")
 
-    # 3. Fonction helper pour dessiner un bloc avec surlignage **
-    def draw_hierarchical_block(text, font, y_start, is_title=False):
-        if not text: return y_start
-        
+    # 3. Helper corrigé : mesure EXACTE incluant le padding des surlignages
+    def measure_and_wrap(text, font, max_w):
+        """Retourne (lines, line_heights, total_height) avec mesures précises."""
+        if not text: return [], [], 0
         clean_t = clean_text(text)
         words = clean_t.split()
         lines = []
         curr_line, curr_w = [], 0
-        max_w = w - 2 * MARGIN
         
         for word in words:
             cw = word.replace("**", "")
-            ww = draw.textlength(cw, font=font) + (20 if "**" in word else 0)
+            is_hl = word.startswith("**") and word.endswith("**")
+            ww = draw.textlength(cw, font=font) + (24 if is_hl else 0)  # 24 = padding highlight
             sp = draw.textlength(" ", font=font) if curr_line else 0
+            
             if curr_w + ww + sp <= max_w:
                 curr_line.append(word); curr_w += ww + sp
             else:
                 if curr_line: lines.append(curr_line)
                 curr_line, curr_w = [word], ww
         if curr_line: lines.append(curr_line)
-
+        
         ascent, descent = font.getmetrics()
         lh = ascent + descent
-        stride = lh + (16 if is_title else 10)
+        return lines, lh, lh
+    
+    def draw_block(lines, font, lh, y_start, is_title=False):
+        """Dessine un bloc et retourne la hauteur totale consommée."""
+        if not lines: return 0
+        stride = lh + (18 if is_title else 12)
+        max_w = w - 2 * MARGIN
         
         y = y_start
         for line_words in lines:
+            # Calcul largeur réelle de la ligne
             lw = 0
             processed = []
             for word in line_words:
                 hl = word.startswith("**") and word.endswith("**")
                 cw = word.replace("**", "")
-                ww = draw.textlength(cw, font=font) + (20 if hl else 0)
-                processed.append((cw, hl, ww)); lw += ww + 8
+                ww = draw.textlength(cw, font=font) + (24 if hl else 0)
+                processed.append((cw, hl, ww))
+                lw += ww + 8
             
             x = (w - lw) // 2
             for cw, hl, ww in processed:
                 if hl:
-                    draw.rectangle([x, y-2, x+ww, y+lh+4], fill=COLORS["blanc"])
-                    draw.text((x+10, y), cw, font=font, fill=COLORS["noir"])
+                    draw.rectangle([x, y-3, x+ww, y+lh+5], fill=COLORS["blanc"])
+                    draw.text((x+12, y), cw, font=font, fill=COLORS["noir"])
                 else:
-                    draw.text((x+2, y+2), cw, font=font, fill=(0,0,0,150)) # Ombre
+                    draw.text((x+2, y+2), cw, font=font, fill=(0,0,0,160))
                     draw.text((x, y), cw, font=font, fill=COLORS["blanc"])
                 x += ww + 8
             y += stride
-        return y
+        
+        return len(lines) * stride
 
-    # 4. Rendu Hiérarchique
-    font_title = get_font(58, bold=True)
-    font_detail = get_font(36, bold=False)
+    # 4. Rendu hiérarchique DYNAMIQUE (plus de positions fixes)
+    font_title = get_font(54, bold=True)
+    font_detail = get_font(34, bold=False)
+    font_src = get_font(20, bold=False)
     
-    # Titre (Fait Choc)
-    draw_hierarchical_block(fait_choc, font_title, h - MARGIN - 180, is_title=True)
+    max_w = w - 2 * MARGIN
     
-    # Détail (Conséquence)
-    draw_hierarchical_block(consequence, font_detail, h - MARGIN - 90, is_title=False)
-
-    # 5. Source
+    # Mesure d'abord tous les blocs
+    title_lines, title_lh, _ = measure_and_wrap(fait_choc, font_title, max_w)
+    detail_lines, detail_lh, _ = measure_and_wrap(consequence, font_detail, max_w)
+    
+    title_h = draw_block(title_lines, font_title, title_lh, 0, is_title=True) if title_lines else 0
+    detail_h = draw_block(detail_lines, font_detail, detail_lh, 0, is_title=False) if detail_lines else 0
+    
+    src_h = 30 if source else 0
+    gap = 20
+    total_content_h = title_h + detail_h + src_h + (gap * 2)
+    
+    # Position de départ : on ancre en bas et on remonte
+    y_cursor = h - MARGIN - total_content_h
+    
+    # Dessin réel avec positions calculées
+    if title_lines:
+        consumed = draw_block(title_lines, font_title, title_lh, y_cursor, is_title=True)
+        y_cursor += consumed + gap
+    
+    if detail_lines:
+        consumed = draw_block(detail_lines, font_detail, detail_lh, y_cursor, is_title=False)
+        y_cursor += consumed + gap
+    
+    # 5. Source (toujours en dessous, jamais superposée)
     if source:
-        font_src = get_font(20, bold=False)
         st = clean_text(source)
         sw = draw.textlength(f"Source : {st}", font=font_src)
-        draw.text(((w-sw)//2, h - MARGIN - 25), f"Source : {st}", font=font_src, fill=COLORS["gris_clair"])
+        draw.text(((w-sw)//2, y_cursor), f"Source : {st}", font=font_src, fill=COLORS["gris_clair"])
 
     img.convert("RGB").save(image_out)
