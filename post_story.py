@@ -82,23 +82,19 @@ def _get_emoji_path(emoji_char: str) -> str | None:
 #  GÉNÉRATION DE TEXTE HIÉRARCHISÉ (JSON)
 # ══════════════════════════════════════════════
 def generer_texte_story():
+    """Génère la structure contexte / fait_choc / consequence / source en français."""
     pilier = random.choices(PILLAR_KEYS, weights=[PILLAR_WEIGHTS[k] for k in PILLAR_KEYS], k=1)[0]
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
 
     prompt = (
-        "Tu es Nyavodroid, la page tech premium.\n"
-        f"Axe éditorial : {PILLARS[pilier]['label']}\n"
-        f"Sujet imposé : {sujet}\n\n"
-        "Génère UNIQUEMENT un objet JSON avec les clés :\n"
-        '  "hook" : phrase d\'accroche choc (max 10 mots), commence par un emoji pertinent\n'
-        '  "explication" : 2-3 lignes développant le hook, en langage simple\n'
-        '  "detail" : une précision chiffrée, une source ou une note courte (1 ligne)\n\n'
-        "Règles :\n"
-        "- Pas de texte autour du JSON.\n"
-        "- Ton : " + TON_EDITORIAL + "\n"
-        "- Compréhensible par tous.\n"
+        "Tu es Nyavodroid. Rédige UNIQUEMENT en français et en respectant EXACTEMENT ce format JSON :\n"
+        '{\n  "contexte": "1 phrase de contexte général",\n'
+        '  "fait_choc": "le chiffre ou fait surprenant (max 8 mots)",\n'
+        '  "consequence": "1 phrase de conséquence concrète",\n'
+        '  "source": "source vérifiable (ex: Nature, 2026)"\n}\n\n'
+        f"Sujet imposé : {sujet}. {TON_EDITORIAL}"
     )
-    print(f"  📝 Génération texte hiérarchique...\n     Axe   : {PILLARS[pilier]['label']}\n     Sujet : {sujet}")
+    print(f"  📝 Génération texte Cultination...\n     Sujet : {sujet}")
     brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, "[story]")
     brut = brut.strip()
     if brut.startswith("```json"):
@@ -107,30 +103,19 @@ def generer_texte_story():
         brut = brut[:-3]
     try:
         data = json.loads(brut)
-        hook = data.get("hook", "")
-        explication = data.get("explication", "")
-        detail = data.get("detail", "")
+        contexte = data.get("contexte", "")
+        fait_choc = data.get("fait_choc", "")
+        consequence = data.get("consequence", "")
+        source = data.get("source", "")
     except Exception:
-        print("  ⚠️ JSON invalide, utilisation du texte brut comme hook.")
-        hook = brut
-        explication = ""
-        detail = ""
+        # fallback : on découpe le texte brut en trois lignes max
+        lignes = [l.strip() for l in brut.split('\n') if l.strip()]
+        contexte = lignes[0] if len(lignes) > 0 else ""
+        fait_choc = lignes[1] if len(lignes) > 1 else ""
+        consequence = lignes[2] if len(lignes) > 2 else ""
+        source = ""
 
-    hook = M.clean_text(hook)
-    explication = M.clean_text(explication)
-    detail = M.clean_text(detail)
-
-    # Ajouter un emoji si absent du hook
-    if hook and not any(ord(c) > 127 for c in hook[:3]):
-        emojis = ["💡", "🔍", "⚡", "🧠", "🤖", "🛡️", "🌐", "🔐", "💻", "🚀", "📡", "🧬"]
-        hook = random.choice(emojis) + " " + hook
-
-    print(f"  ✅ Hook      : {hook}")
-    if explication:
-        print(f"     Explication : {explication}")
-    if detail:
-        print(f"     Détail      : {detail}")
-    return pilier, sujet, hook, explication, detail
+    return pilier, sujet, contexte, fait_choc, consequence, source
 
 
 # ══════════════════════════════════════════════
@@ -146,14 +131,9 @@ def generer_image_story(pilier: str, sujet: str, chemin: str) -> None:
 # ══════════════════════════════════════════════
 #  INCRUSTATION DE TEXTE DYNAMIQUE + EMOJI IMAGE + WATERMARK DOUBLE
 # ══════════════════════════════════════════════
-def incruster_texte_hierarchique(image_in: str, hook: str, explication: str, detail: str, image_out: str) -> None:
-    """
-    Incruste les 3 niveaux de texte sur une image 9:16.
-    - Positions Y dynamiques pour éviter le chevauchement.
-    - Emoji du hook affiché sous forme d'image PNG.
-    - Watermark double (expression + profil) appliqué à la fin.
-    """
-    # 1. Scale/crop 9:16
+def incruster_texte_hierarchique(image_in: str, contexte: str, fait_choc: str, consequence: str, source: str, image_out: str) -> None:
+    """Incruste le texte en mode Cultination : contexte discret, fait choc encadré, conséquence, source."""
+    # 1. Scale/crop 9:16 (inchangé)
     try:
         cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
                "-show_entries", "stream=width,height", "-of", "csv=p=0", image_in]
@@ -173,86 +153,72 @@ def incruster_texte_hierarchique(image_in: str, hook: str, explication: str, det
                 f"crop={STORY_WIDTH}:{STORY_HEIGHT},"
                 "format=rgba"
             )
-    except Exception:
-        scale_filter = (
-            f"scale={STORY_WIDTH}:{STORY_HEIGHT}:force_original_aspect_ratio=increase,"
-            f"crop={STORY_WIDTH}:{STORY_HEIGHT},"
-            "format=rgba"
-        )
+    except:
+        scale_filter = f"scale={STORY_WIDTH}:{STORY_HEIGHT},format=rgba"
 
     # 2. Nettoyage des textes
-    hook = clean_backslash(hook)
-    explication = clean_backslash(explication)
-    detail = clean_backslash(detail)
+    contexte = clean_backslash(M.clean_text(contexte))
+    fait_choc = clean_backslash(M.clean_text(fait_choc))
+    consequence = clean_backslash(M.clean_text(consequence))
+    source = clean_backslash(M.clean_text(source))
 
-    # 3. Extraction de l'emoji du début du hook
-    emoji_char = None
-    if hook and ord(hook[0]) > 127:
-        emoji_char = hook[0]
-        hook = hook[1:].strip()
-    if not emoji_char and hook and len(hook) > 1 and ord(hook[0]) > 127:
-        emoji_char = hook[0]
-        hook = hook[1:].strip()
+    # Wrapping
+    def wrap(text, max_chars): return wrap_text(text, max_chars) if text else ""
+    contexte_w = wrap(contexte, 30)
+    fait_w = wrap(fait_choc, 22)
+    consequence_w = wrap(consequence, 35)
+    source_w = wrap(source, 45)
 
-    emoji_path = _get_emoji_path(emoji_char) if emoji_char else None
+    # 3. Positions verticales fixes (calcul simplifié)
+    y_contexte = MARGIN
+    y_fait = y_contexte + 80 + 20   # laisse la place pour le contexte
+    y_consequence = y_fait + 80 + 20
+    y_source = STORY_HEIGHT - MARGIN - 30
 
-    # 4. Wrapping
-    max_chars_hook = 18
-    max_chars_expl = 28
-    max_chars_detail = 40
-    hook_wrapped = wrap_text(hook, max_chars_hook) if hook else ""
-    expl_wrapped = wrap_text(explication, max_chars_expl) if explication else ""
-    detail_wrapped = wrap_text(detail, max_chars_detail) if detail else ""
-
-    hook_esc = escape_text(hook_wrapped)
-    expl_esc = escape_text(expl_wrapped)
-    detail_esc = escape_text(detail_wrapped)
-
-    # 5. Calcul des positions Y dynamiques
-    line_hook = int(HOOK_FONTSIZE * 1.3)
-    line_expl = int(EXPL_FONTSIZE * 1.3)
-    line_detail = int(DETAIL_FONTSIZE * 1.3)
-
-    y_hook = MARGIN
-    nb_lignes_hook = count_lines(hook_wrapped)
-    hauteur_hook = nb_lignes_hook * line_hook
-
-    y_expl = y_hook + hauteur_hook + 25
-    nb_lignes_expl = count_lines(expl_wrapped)
-    hauteur_expl = nb_lignes_expl * line_expl
-
-    # Détail toujours en bas, avec marge
-    y_detail = STORY_HEIGHT - MARGIN - line_detail
-
-    # 6. Construction des filtres drawtext
     filtres = []
-    if hook_esc:
+    # Contexte (petit, blanc, ombre légère)
+    if contexte_w:
+        filtres.append(
+            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
+            f"text='{escape_text(contexte_w)}':fontcolor=0xFFFFFF:fontsize={ACCROCHE_FONTSIZE}:"
+            f"x=(w-text_w)/2:y={y_contexte}:shadowcolor=0x000000@0.3:shadowx=1:shadowy=2"
+        )
+    # Fait choc (encadré blanc, texte violet foncé)
+    if fait_w:
+        # On crée un fond blanc semi-transparent derrière le texte
+        # On utilise drawbox pour le fond, puis drawtext par-dessus
+        box_w = 600  # largeur fixe de l'encadré
+        box_h = 80
+        box_x = (STORY_WIDTH - box_w) // 2
+        box_y = y_fait - 10
+        filtres.append(
+            f"drawbox=x={box_x}:y={box_y}:w={box_w}:h={box_h}:color=0xFFFFFF@0.85:t=fill"
+        )
         filtres.append(
             f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-            f"text='{hook_esc}':fontcolor=0xFFFFFF:fontsize={HOOK_FONTSIZE}:"
-            f"x=(w-text_w)/2:y={y_hook}:"
-            f"shadowcolor=0xEA4FD9@0.6:shadowx=0:shadowy=4"
+            f"text='{escape_text(fait_w)}':fontcolor=0x2D1B4E:fontsize={FAIT_CHOC_FONTSIZE}:"
+            f"x=(w-text_w)/2:y={y_fait}"
         )
-    if expl_esc:
+    # Conséquence (blanc, plus petit)
+    if consequence_w:
         filtres.append(
             f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
-            f"text='{expl_esc}':fontcolor=0xFFFFFF:fontsize={EXPL_FONTSIZE}:"
-            f"x=(w-text_w)/2:y={y_expl}:"
-            f"shadowcolor=0x000000@0.4:shadowx=1:shadowy=2"
+            f"text='{escape_text(consequence_w)}':fontcolor=0xFFFFFF:fontsize={CONSEQUENCE_FONTSIZE}:"
+            f"x=(w-text_w)/2:y={y_consequence}"
         )
-    if detail_esc:
+    # Source (gris clair, en bas à gauche)
+    if source_w:
         filtres.append(
             f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
-            f"text='{detail_esc}':fontcolor=0xCCCCCC:fontsize={DETAIL_FONTSIZE}:"
-            f"x=(w-text_w)/2:y={y_detail}"
+            f"text='{escape_text(source_w)}':fontcolor=0xCCCCCC:fontsize={SOURCE_FONTSIZE}:"
+            f"x={MARGIN}:y={y_source}"
         )
 
     filtre_texte = scale_filter
     if filtres:
         filtre_texte += "," + ",".join(filtres)
 
-    # 7. Image temporaire après texte
-    temp_text = "story_text_incrust.png"
+    temp_text = "story_text_cult.png"
     try:
         subprocess.run(
             ["ffmpeg", "-i", image_in, "-vf", filtre_texte, "-frames:v", "1", "-y", temp_text],
@@ -261,32 +227,7 @@ def incruster_texte_hierarchique(image_in: str, hook: str, explication: str, det
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ffmpeg texte story échec : {e.stderr[:500]}")
 
-    # 8. Superposition de l'emoji (si dispo)
-    if emoji_path:
-        emoji_size = 80
-        # Position : centré horizontalement avec le hook, juste au-dessus de la première ligne
-        emo_x = (STORY_WIDTH - emoji_size) // 2
-        emo_y = y_hook - emoji_size - 10  # un peu au-dessus du hook
-        if emo_y < 0:
-            emo_y = y_hook  # fallback si trop haut
-        emo_filter = (
-            f"[1:v]scale={emoji_size}:-1[emo];"
-            f"[0:v][emo]overlay={emo_x}:{emo_y}"
-        )
-        temp_emo = "story_text_emo.png"
-        try:
-            subprocess.run(
-                ["ffmpeg", "-i", temp_text, "-i", emoji_path,
-                 "-filter_complex", emo_filter,
-                 "-frames:v", "1", "-y", temp_emo],
-                check=True, capture_output=True, text=True
-            )
-            os.replace(temp_emo, temp_text)
-        except subprocess.CalledProcessError:
-            # continuer sans emoji
-            pass
-
-    # 9. Watermark double (expression + profil)
+    # 4. Watermark (profil + expression) – on appelle la nouvelle version
     M.overlay_watermark(temp_text, image_out)
     if os.path.exists(temp_text):
         os.remove(temp_text)
@@ -332,25 +273,29 @@ def publier_story(photo_id: str) -> dict:
 # ══════════════════════════════════════════════
 #  MAIN
 # ══════════════════════════════════════════════
+
 def main() -> None:
     print("=" * 50)
-    print("🎬 Nyavodroid — Story [Premium]")
+    print("🎬 Nyavodroid — Story [Premium Cultination]")
     print("=" * 50)
     M.verify_fb_token()
 
-    pilier, sujet, hook, explication, detail = generer_texte_story()
+    pilier, sujet, contexte, fait_choc, consequence, source = generer_texte_story()
     print(f"\n📌 Axe   : {PILLARS[pilier]['label']}\n📌 Sujet : {sujet}\n")
+    print(f"   Contexte    : {contexte}")
+    print(f"   Fait choc   : {fait_choc}")
+    print(f"   Conséquence : {consequence}")
+    print(f"   Source      : {source}")
 
     print("  🖼️  Génération image de fond...")
     generer_image_story(pilier, sujet, "story_raw.png")
 
-    print("  🎨 Incrustation du texte hiérarchique + watermark double...")
-    incruster_texte_hierarchique("story_raw.png", hook, explication, detail, STORY_IMAGE_PATH)
+    print("  🎨 Incrustation Cultination (encadré + watermark)...")
+    incruster_texte_hierarchique("story_raw.png", contexte, fait_choc, consequence, source, STORY_IMAGE_PATH)
 
     pid = uploader_photo_non_publiee(STORY_IMAGE_PATH)
     res = publier_story(pid)
     print(f"\n{'='*50}\n✅ TERMINÉ — Story ID : {res.get('id','N/A')}\n{'='*50}")
-
 
 if __name__ == "__main__":
     try:
