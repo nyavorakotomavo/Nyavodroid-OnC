@@ -309,3 +309,190 @@ def incruster_texte_reel_pillow(image_in, hook, detail, image_out):
                           M.COLORS["blanc"], box_color=M.BOX_BG["noir_translucide"])
 
     img.convert("RGB").save(image_out)
+# ══════════════════════════════════════════════
+#  FORMAT 3 : REEL — images, audio, assemblage, publication
+# ══════════════════════════════════════════════
+def _generer_images_reel(pilier: str, hooks: list, details: list, sujet: str) -> list:
+    """Génère les images de chaque scène en 9:16, avec incrustation Pillow et watermark."""
+    label = PILLARS[pilier]["label"]
+    categorie = PILLARS[pilier].get("categorie", "tech")
+    use_pexels = (categorie != "tech")
+
+    chemins = []
+    for i, (hook, detail) in enumerate(zip(hooks, details), 1):
+        chemin = f"reel_img_{i}.png"
+        ctx = ""
+        if i > 1:
+            ctx += f"Scène précédente : « {hooks[i-2]} »\n"
+        if i < len(hooks):
+            ctx += f"Scène suivante : « {hooks[i]} »\n"
+
+        acte = STRUCTURE_REEL[i-1]
+        prompt = (
+            f"Scène {i}/{NB_IMAGES_REEL} d'une mini-histoire visuelle en 3 actes.\n"
+            f"Sujet global : {sujet}\nAxe : {label}\n\n"
+            f"ACTE {i} — {acte['acte']} : {acte['role']}\n"
+            f"Texte affiché : « {hook} »\n"
+            f"Détail : « {detail} »\n"
+            f"Ambiance : {acte['ambiance']}\n"
+            f"Cadrage : {acte['consigne_image']}\n\n"
+        )
+        if ctx:
+            prompt += f"Continuité narrative :\n{ctx}\n"
+        prompt += f"Style : {STYLE_IMAGE_SUFFIX}\nIMPORTANT : cohérence visuelle."
+
+        if i > 1:
+            pause = DELAY_ENTRE_IMAGES + random.uniform(0, 10)
+            print(f"  ⏳ Pause anti-rate-limit : {pause:.0f}s...")
+            time.sleep(pause)
+
+        print(f"  🖼️  Scène {i}/{NB_IMAGES_REEL} [{acte['acte']}]...")
+
+        pexels_query = sujet if use_pexels else ""
+        M.image_avec_fallback(
+            prompt if not use_pexels else "",
+            GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT),
+            use_pexels=use_pexels, pexels_query=pexels_query
+        )
+
+        # Incrustation du texte (hook + détail) via Pillow
+        incruster_texte_reel_pillow(chemin, hook, detail, chemin)
+
+        # Appliquer le watermark profil + expression (sans source)
+        watermarked = f"reel_img_wm_{i}.png"
+        M.overlay_watermark(chemin, watermarked, source_text="")
+        os.replace(watermarked, chemin)
+
+        chemins.append(chemin)
+    return chemins
+
+
+def _generer_audio_reel(pilier: str) -> None:
+    prompt = ("Dark synthwave cyber ambient instrumental, deep analog bass, neon atmosphere, "
+              "cinematic tension, retro-futuristic, no vocals, no speech")
+    print("  🎵 Génération musique de fond (best-effort)...")
+    M.audio_avec_fallback(prompt, AUDIO_PATH)
+
+
+def _assembler_video(images: list, textes: list, sortie: str) -> None:
+    audio_existe = os.path.exists(AUDIO_PATH)
+    duree_totale = len(images) * DUREE_PAR_IMAGE
+
+    if not audio_existe:
+        print("  🔇 'background_music.mp3' absent → génération silence AAC...")
+        silence_aac = "silence.m4a"
+        subprocess.run(
+            ["ffmpeg", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+             "-t", str(duree_totale), "-c:a", "aac", "-b:a", "128k", "-y", silence_aac],
+            check=True, capture_output=True, text=True
+        )
+        audio_source = silence_aac
+    else:
+        audio_source = AUDIO_PATH
+
+    inputs = []
+    for img in images:
+        inputs += ["-loop", "1", "-t", str(DUREE_PAR_IMAGE), "-i", img]
+    inputs += ["-i", audio_source]
+    n = len(images)
+
+    filtres = []
+    for i in range(n):
+        filtres.append(
+            f"[{i}:v]scale={STORY_WIDTH}:{STORY_HEIGHT}:force_original_aspect_ratio=decrease,"
+            f"pad={STORY_WIDTH}:{STORY_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black,"
+            f"format=yuv420p,"
+            f"zoompan=z='min(zoom+0.0008,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+            f":d={int(DUREE_PAR_IMAGE*25)}:s={STORY_WIDTH}x{STORY_HEIGHT}:fps=25,"
+            f"fade=t=in:st=0:d=0.5,fade=t=out:st={DUREE_PAR_IMAGE-0.5}:d=0.5[scene{i}]")
+    filtres.append("".join(f"[scene{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=0[slideshow]")
+    filtres.append("[slideshow]null[final]")
+
+    cmd = ["ffmpeg", *inputs, "-filter_complex", ";".join(filtres),
+           "-map", "[final]", "-map", f"{n}:a",
+           "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+           "-c:a", "aac", "-b:a", "128k", "-pix_fmt", "yuv420p",
+           "-t", str(duree_totale), "-y", sortie]
+    try:
+        print("  🎬 Assemblage vidéo ffmpeg...")
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        print(f"  ✅ Vidéo : {sortie} ({os.path.getsize(sortie):,} o)")
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"ffmpeg échec : {e.stderr[:800]}")
+
+
+def publier_reel(pilier: str) -> dict:
+    sujet, hooks, details = _generer_phrases_reel(pilier)
+    print(f"\n📌 Axe   : {PILLARS[pilier]['label']}\n📌 Sujet : {sujet}")
+    print(f"📌 Storytelling Reel ({NB_IMAGES_REEL} actes) :")
+    for i, (h, d) in enumerate(zip(hooks, details), 1):
+        print(f"   {i}. [{STRUCTURE_REEL[i-1]['acte']}] {h} | {d}")
+
+    images = _generer_images_reel(pilier, hooks, details, sujet)
+    _generer_audio_reel(pilier)
+    _assembler_video(images, hooks, REEL_VIDEO_PATH)
+
+    # Légende propre (max 500 caractères, pas de pipe)
+    legende = " ".join(hooks)
+    legende = legende[:500]
+    legende += "\n\n#Nyavodroid"
+
+    ep = f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/video_reels"
+    try:
+        print("  📤 Reel — phase 1/3 (start)...")
+        r1 = M._req("POST", ep, data={"upload_phase": "start", "access_token": M.FB_PAGE_ACCESS_TOKEN}, timeout=M.TIMEOUT)
+        init = r1.json()
+        video_id, upload_url = init.get("video_id"), init.get("upload_url")
+        if not video_id or not upload_url:
+            raise ValueError(f"Phase start échouée : {init}")
+        print("  📤 Reel — phase 2/3 (transfer)...")
+        with open(REEL_VIDEO_PATH, "rb") as f:
+            M._req("POST", upload_url,
+                   data={"upload_phase": "transfer", "video_id": video_id, "access_token": M.FB_PAGE_ACCESS_TOKEN},
+                   files={"video_file": (os.path.basename(REEL_VIDEO_PATH), f, "video/mp4")}, timeout=300)
+        print("  📤 Reel — phase 3/3 (finish)...")
+        r3 = M._req("POST", ep, data={
+            "upload_phase": "finish",
+            "video_id": video_id,
+            "access_token": M.FB_PAGE_ACCESS_TOKEN,
+            "description": legende
+        }, timeout=M.TIMEOUT)
+        print(f"  ✅ Reel publié — Video ID : {video_id}")
+        return r3.json()
+    except requests.exceptions.HTTPError as e:
+        raise M.fb_error(e, "Reel vidéo") from e
+    except OSError as e:
+        raise RuntimeError(f"Fichier vidéo illisible : {e}") from e
+
+
+# ══════════════════════════════════════════════
+#  MAIN
+# ══════════════════════════════════════════════
+def main() -> None:
+    print("=" * 60)
+    print("🎬 Nyavodroid — Multi-formats [Premium]")
+    print("=" * 60)
+    M.verify_fb_token()
+    tc = choisir_type_contenu()
+    pilier = choisir_pilier()
+    labels = {"texte_seul": "📝 Texte seul (image)", "image_texte": "🖼️  Image + Texte", "reel": "🎬 Reel vidéo"}
+    print(f"\n📌 Format : {labels[tc]}\n📌 Pilier : {PILLARS[pilier]['label']}"
+          f"\n📌 Heure  : {datetime.now(timezone.utc).strftime('%H:%M UTC')}\n")
+    if tc == "texte_seul":
+        res = publier_texte_seul(pilier)
+    elif tc == "image_texte":
+        res = publier_image_texte(pilier)
+    else:
+        res = publier_reel(pilier)
+    print(f"\n{'='*60}\n✅ TERMINÉ — {labels[tc]}\n   ID : {res.get('id', res.get('video_id','N/A'))}\n{'='*60}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except RuntimeError as e:
+        print(f"\n❌ ERREUR : {e}", file=sys.stderr); sys.exit(1)
+    except KeyError as e:
+        print(f"\n❌ Secret manquant : {e}", file=sys.stderr); sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ Inattendu : {type(e).__name__}: {e}", file=sys.stderr); sys.exit(1)
