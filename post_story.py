@@ -95,17 +95,50 @@ def generer_image_story(pilier: str, sujet: str, chemin: str) -> None:
         )
         M.image_avec_fallback(prompt_img, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
 
-
-# ══════════════════════════════════════════════
-#  IMAGE DE FOND
+ ══════════════════════════════════════════════
+#  GÉNÉRATION IMAGE — PEXELS PRIORITAIRE + FALLBACK IA SÉCURISÉ
 # ══════════════════════════════════════════════
 def generer_image_story(pilier: str, sujet: str, chemin: str) -> None:
-    """Génère l'image 9:16 avec le style premium (via IA)."""
-    prompt = M.clean_text(
-        f"Illustration verticale 9:16 pour le sujet : {sujet}\n"
-        f"Axe : {PILLARS[pilier]['label']}\nStyle : {STYLE_IMAGE_SUFFIX}"
-    )
-    M.image_avec_fallback(prompt, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
+    """
+    Décision dynamique :
+    - Tech/Science → Pexels en priorité (photo réelle, zéro texte parasite)
+    - Autres piliers → IA conceptuelle directe
+    - Fallback IA sécurisé si Pexels échoue
+    """
+    categorie = PILLARS[pilier].get("categorie", "tech")
+    use_pexels = (categorie in ["tech", "science"])
+
+    if use_pexels:
+        # Tentative 1 : requête exacte
+        print(f"  🖼️  [Pexels] Recherche : '{sujet}'")
+        success = M.get_image_from_pexels(sujet, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
+        
+        # Tentative 2 : si échec, on simplifie les mots-clés (enlève les articles/déterminants)
+        if not success:
+            mots_simples = " ".join([m for m in sujet.split() if len(m) > 3]) or sujet
+            print(f"  🖼️  [Pexels] Retry avec mots-clés simplifiés : '{mots_simples}'")
+            success = M.get_image_from_pexels(mots_simples, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
+        
+        # Fallback IA sécurisé si Pexels ne trouve toujours rien
+        if not success:
+            print(f"  ⚠️  [Pexels] Aucun résultat → Fallback IA documentaire")
+            prompt_img = (
+                f"Professional documentary photography of {sujet}, photorealistic, 8k, sharp focus, natural lighting. "
+                f"ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS, NO TYPOGRAPHY, NO WATERMARKS, NO LOGOS, NO CAPTIONS."
+            )
+            M.image_avec_fallback(prompt_img, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
+        else:
+            print(f"  ✅ [Pexels] Photo réelle utilisée")
+            
+    else:
+        # Piliers abstraits/coulisses → IA conceptuelle directe
+        print(f"  🎨 [IA] Génération conceptuelle pour : {sujet}")
+        prompt_img = (
+            f"Abstract conceptual art representing {sujet}, premium editorial style, "
+            f"deep violet and midnight blue tones, clean geometric composition, soft gradients. "
+            f"ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS, NO TYPOGRAPHY, NO WATERMARKS."
+        )
+        M.image_avec_fallback(prompt_img, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
 
 
 # ══════════════════════════════════════════════
