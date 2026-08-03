@@ -268,16 +268,16 @@ def publier_image_texte(pilier: str) -> dict:
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
     categorie = PILLARS[pilier].get("categorie", "tech")
 
-    # --- Génération du contenu structuré (JSON) ---
- prompt = (
-    "Tu es Nyavodroid. Rédige UNIQUEMENT en français et en JSON :\n"
-    '{\n  "contexte": "1 phrase de contexte général",\n'
-    '  "fait_choc": "le chiffre ou fait surprenant (max 8 mots)",\n'
-    '  "consequence": "1 phrase de conséquence concrète",\n'
-    '  "source": "source vérifiable (ex: Nature, 2026)",\n'
-    '  "legende": "légende Facebook en 2-3 lignes (sans hashtags)"\n}\n\n'
-    f"Sujet imposé : {sujet}. {TON_EDITORIAL}"
-)
+    # ----- Génération du contenu structuré (JSON) -----
+    prompt = (
+        "Tu es Nyavodroid. Rédige UNIQUEMENT en français et en JSON :\n"
+        '{\n  "contexte": "1 phrase de contexte général",\n'
+        '  "fait_choc": "le chiffre ou fait surprenant (max 8 mots)",\n'
+        '  "consequence": "1 phrase de conséquence concrète",\n'
+        '  "source": "source vérifiable (ex: Nature, 2026)",\n'
+        '  "legende": "légende Facebook en 2-3 lignes (sans hashtags)"\n}\n\n'
+        f"Sujet imposé : {sujet}. {TON_EDITORIAL}"
+    )
     print(f"  📝 Génération contenu post image...\n     Axe : {label}\n     Sujet : {sujet}")
     brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, "(post json)")
     brut = brut.strip()
@@ -285,35 +285,33 @@ def publier_image_texte(pilier: str) -> dict:
         brut = brut[7:]
     if brut.endswith("```"):
         brut = brut[:-3]
+
     try:
         data = json.loads(brut)
-        hook = data.get("hook", "")
-        explication = data.get("explication", "")
-        detail = data.get("detail", "")
-        legende_hook = data.get("legende_hook", "")
-        legende_contexte = data.get("legende_contexte", "")
-        legende_developpement = data.get("legende_developpement", "")
-        legende_cta = data.get("legende_cta", "")
-        hashtags = data.get("hashtags", "")
+        contexte = data.get("contexte", "")
+        fait_choc = data.get("fait_choc", "")
+        consequence = data.get("consequence", "")
+        source = data.get("source", "")
+        legende = data.get("legende", "")
     except Exception:
-        # Fallback : on utilise tout le texte brut comme légende simple
         print("  ⚠️ JSON invalide, fallback légende simple.")
-        hook = explication = detail = ""
-        legende_hook = brut
-        legende_contexte = legende_developpement = legende_cta = ""
-        hashtags = ""
+        contexte = brut
+        fait_choc = ""
+        consequence = ""
+        source = ""
+        legende = brut
 
     # Nettoyage
-    hook = M.clean_text(hook)
-    explication = M.clean_text(explication)
-    detail = M.clean_text(detail)
+    contexte = M.clean_text(contexte)
+    fait_choc = M.clean_text(fait_choc)
+    consequence = M.clean_text(consequence)
+    source = M.clean_text(source)
 
-    # --- Choix de la source d'image ---
-    use_pexels = (categorie != "tech")  # non-tech = Pexels
+    # ----- Choix de la source d'image -----
+    use_pexels = (categorie != "tech")
     if use_pexels:
-        # On utilisera la fonction image_avec_fallback avec use_pexels=True
         pexels_query = sujet
-        prompt_img = ""  # pas utilisé
+        prompt_img = ""
     else:
         prompt_img = (
             f"Illustration verticale 4:5 pour le sujet : {sujet}\n"
@@ -328,33 +326,23 @@ def publier_image_texte(pilier: str) -> dict:
         use_pexels=use_pexels, pexels_query=pexels_query
     )
 
-    # --- Incrustation du texte hiérarchique + watermark ---
-    if hook or explication or detail:
+    # ----- Incrustation du texte hiérarchique + watermark -----
+    if contexte or fait_choc or consequence:
         print("  🎨 Incrustation texte + watermark double...")
-        incruster_texte_hierarchique_post(IMAGE_PATH, hook, explication, detail, IMAGE_PATH)
+        incruster_texte_hierarchique_post(IMAGE_PATH, contexte, fait_choc, consequence, source, IMAGE_PATH)
     else:
-        # Même sans texte, on applique le watermark double
-        M.overlay_watermark(IMAGE_PATH, IMAGE_PATH)
+        # Même sans texte, on applique le watermark
+        M.overlay_watermark(IMAGE_PATH, IMAGE_PATH, source_text="")
 
-    # --- Assemblage légende ---
-    parts = []
-    if legende_hook:
-        parts.append(legende_hook)
-    if legende_contexte:
-        parts.append(legende_contexte)
-    if legende_developpement:
-        parts.append(legende_developpement)
-    if legende_cta:
-        parts.append(legende_cta)
-    hashtags_finaux = hashtags.strip()
-    if "#Nyavodroid" not in hashtags_finaux:
-        hashtags_finaux += " #Nyavodroid"
-    parts.append(hashtags_finaux.strip())
-    legende_finale = "\n\n".join(parts)
+    # ----- Assemblage de la légende finale -----
+    legende_finale = f"{contexte}\n\n{fait_choc}\n\n{consequence}"
+    if source:
+        legende_finale += f"\n\nSource : {source}"
+    legende_finale += "\n\n#Nyavodroid"
 
     print(f"\n📌 Axe : {label}\n📌 Sujet : {sujet}\n📌 Légende :\n{legende_finale}\n")
 
-    # --- Publication ---
+    # ----- Publication -----
     ep = f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/photos"
     try:
         with open(IMAGE_PATH, "rb") as f:
