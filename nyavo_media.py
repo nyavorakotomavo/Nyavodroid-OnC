@@ -402,7 +402,7 @@ def _i_cloudflare(prompt: str, chemin: str) -> None:
         json_data={
             "prompt": prompt,
             "num_steps": 4,
-            "negative_prompt": CLOUDFLARE_NEGATIVE,
+            "negative_prompt": "no text, no letters, no numbers, no typography, no watermark, no logo, no captions",
         },
         timeout=60,
     )
@@ -525,8 +525,10 @@ def image_avec_fallback(prompt: str, gemini_key: str, chemin: str,
     if size is None:
         size = DEFAULT_IMG_SIZE
 
+    # Prompt strict sans texte
     prompt = clean_text(prompt) + ", high quality, sharp focus, no stretching, no distortion, no text, no letters, no words, no typography"
     erreurs = []
+    tentatives = 0
 
     if use_pexels and pexels_query:
         print(f"    🖼️ Pexels (recherche : {pexels_query})...")
@@ -539,54 +541,20 @@ def image_avec_fallback(prompt: str, gemini_key: str, chemin: str,
 
     # 1. Gemini (cascade)
     try:
+        tentatives += 1
         print("    🖼️ Gemini image...")
         _i_gemini(prompt, chemin, gemini_key, size)
         _check_img(chemin, size)
         print(f"    ✅ Image Gemini ({os.path.getsize(chemin):,} o)")
+        print(f"    📊 Fournisseur utilisé : Gemini après {tentatives} tentative(s)")
         return
     except Exception as e:
         erreurs.append(f"Gemini={e}"); print(f"    ⚠️ Gemini image : {e}")
 
-    # 2. Hugging Face
-    if HF_TOKEN:
-        try:
-            print("    🖼️ Hugging Face image...")
-            _i_hf(prompt, chemin, size)
-            _check_img(chemin, size)
-            print(f"    ✅ Image HF ({os.path.getsize(chemin):,} o)")
-            return
-        except Exception as e:
-            erreurs.append(f"HF={e}"); print(f"    ⚠️ HF image : {e}")
-
-    # 3. Together
-    if TOGETHER_API_KEY:
-        try:
-            print("    🖼️ Together image...")
-            _i_together(prompt, chemin, size)
-            _check_img(chemin, size)
-            print(f"    ✅ Image Together ({os.path.getsize(chemin):,} o)")
-            return
-        except Exception as e:
-            erreurs.append(f"Together={e}"); print(f"    ⚠️ Together image : {e}")
-
-    # 4. Fal.ai
-    if FAL_API_KEY:
-        try:
-            print("    🖼️ Fal.ai image (carré → crop)...")
-            raw = chemin + ".raw.png"
-            _i_fal(prompt, raw)
-            _check_img(raw)
-            crop_to_ratio(raw, chemin, target_size=size)
-            _check_img(chemin, size)
-            os.remove(raw)
-            print(f"    ✅ Image Fal.ai ({os.path.getsize(chemin):,} o)")
-            return
-        except Exception as e:
-            erreurs.append(f"Fal.ai={e}"); print(f"    ⚠️ Fal.ai : {e}")
-
-    # 5. Cloudflare
+    # 2. Cloudflare (remonté)
     if CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN:
         try:
+            tentatives += 1
             print("    🖼️ Cloudflare image (carré → crop)...")
             raw = chemin + ".raw.png"
             _i_cloudflare(prompt, raw)
@@ -595,16 +563,62 @@ def image_avec_fallback(prompt: str, gemini_key: str, chemin: str,
             _check_img(chemin, size)
             os.remove(raw)
             print(f"    ✅ Image Cloudflare ({os.path.getsize(chemin):,} o)")
+            print(f"    📊 Fournisseur utilisé : Cloudflare après {tentatives} tentative(s)")
             return
         except Exception as e:
             erreurs.append(f"Cloudflare={e}"); print(f"    ⚠️ Cloudflare : {e}")
 
+    # 3. Hugging Face
+    if HF_TOKEN:
+        try:
+            tentatives += 1
+            print("    🖼️ Hugging Face image...")
+            _i_hf(prompt, chemin, size)
+            _check_img(chemin, size)
+            print(f"    ✅ Image HF ({os.path.getsize(chemin):,} o)")
+            print(f"    📊 Fournisseur utilisé : Hugging Face après {tentatives} tentative(s)")
+            return
+        except Exception as e:
+            erreurs.append(f"HF={e}"); print(f"    ⚠️ HF image : {e}")
+
+    # 4. Together
+    if TOGETHER_API_KEY:
+        try:
+            tentatives += 1
+            print("    🖼️ Together image...")
+            _i_together(prompt, chemin, size)
+            _check_img(chemin, size)
+            print(f"    ✅ Image Together ({os.path.getsize(chemin):,} o)")
+            print(f"    📊 Fournisseur utilisé : Together après {tentatives} tentative(s)")
+            return
+        except Exception as e:
+            erreurs.append(f"Together={e}"); print(f"    ⚠️ Together : {e}")
+
+    # 5. Fal.ai
+    if FAL_API_KEY:
+        try:
+            tentatives += 1
+            print("    🖼️ Fal.ai image (carré → crop)...")
+            raw = chemin + ".raw.png"
+            _i_fal(prompt, raw)
+            _check_img(raw)
+            crop_to_ratio(raw, chemin, target_size=size)
+            _check_img(chemin, size)
+            os.remove(raw)
+            print(f"    ✅ Image Fal.ai ({os.path.getsize(chemin):,} o)")
+            print(f"    📊 Fournisseur utilisé : Fal.ai après {tentatives} tentative(s)")
+            return
+        except Exception as e:
+            erreurs.append(f"Fal.ai={e}"); print(f"    ⚠️ Fal.ai : {e}")
+
     # 6. Pollinations
     try:
+        tentatives += 1
         print("    🖼️ Pollinations image (dernier recours)...")
         _i_pollinations(prompt, chemin)
         _check_img(chemin)
         print(f"    ✅ Image Pollinations ({os.path.getsize(chemin):,} o)")
+        print(f"    📊 Fournisseur utilisé : Pollinations après {tentatives} tentative(s)")
         return
     except Exception as e:
         erreurs.append(f"Pollinations={e}"); print(f"    ⚠️ Pollinations image : {e}")
