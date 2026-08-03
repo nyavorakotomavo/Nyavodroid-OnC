@@ -995,133 +995,105 @@ def _measure_block_height(lines, font, padding):
     return int(total_h + 2 * padding)
 
 # ══════════════════════════════════════════════
-#  MOTEUR PRINCIPAL — STYLE "CULTINATION"
+#  MOTEUR PRINCIPAL — HIÉRARCHIE + LOGO NYAVODROID
 # ══════════════════════════════════════════════
 def incruster_texte_pillow(image_in, contexte, fait_choc, consequence, source,
                            image_out, target_size):
-    """
-    Rendu style 'Cultination' :
-      - Badge CULTINATION en haut à gauche.
-      - Dégradé noir franc en bas.
-      - Texte centré en bas, gras, avec ombre portée.
-      - Surlignage blanc automatique pour les mots entre **astérisques**.
-    """
     w, h = target_size
     img = Image.open(image_in).convert("RGBA")
     img = _crop_resize_pillow(img, (w, h))
     
-    # 1. Dégradé noir en bas (plus franc pour le style Cultination)
+    # 1. Dégradé noir en bas
     gradient = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw_grad = ImageDraw.Draw(gradient)
-    grad_height = int(h * 0.5) 
+    grad_height = int(h * 0.55) 
     for y in range(grad_height):
-        # Courbe exponentielle pour un noir plus dense en bas
-        alpha = int(240 * ((y / grad_height) ** 1.5))
+        alpha = int(250 * ((y / grad_height) ** 1.2))
         draw_grad.line([(0, h - grad_height + y), (w, h - grad_height + y)], fill=(0, 0, 0, alpha))
     img = Image.alpha_composite(img, gradient)
-    
-    # 2. Badge "CULTINATION" en haut à gauche
     draw = ImageDraw.Draw(img)
-    font_badge = get_font(28, bold=True)
-    badge_text = "CULTINATION"
-    bbox_badge = draw.textbbox((0, 0), badge_text, font=font_badge)
-    bw, bh = bbox_badge[2] - bbox_badge[0], bbox_badge[3] - bbox_badge[1]
-    pad_x, pad_y = 16, 8
-    # Rectangle blanc
-    draw.rectangle([MARGIN, MARGIN, MARGIN + bw + 2*pad_x, MARGIN + bh + 2*pad_y], fill=COLORS["blanc"])
-    # Texte noir
-    draw.text((MARGIN + pad_x, MARGIN + pad_y - 2), badge_text, font=font_badge, fill=COLORS["noir"])
 
-    # 3. Préparation du texte combiné
-    # On fusionne contexte + fait_choc + conséquence en une narration fluide
-    full_text = f"{contexte} {fait_choc} {consequence}".strip()
-    if not full_text:
-        full_text = "..."
-    full_text = clean_text(full_text)
-    
-    # 4. Configuration Police
-    font_size = 46 
-    font = get_font(font_size, bold=True)
-    max_width = w - 2 * MARGIN
-    
-    # Wrap manuel qui respecte les ** pour le surlignage
-    # On split d'abord par espace, mais on garde les ** attachés aux mots
-    words = full_text.split()
-    lines = []
-    current_line = []
-    current_width = 0
-    
-    for word in words:
-        # Mesure approximative (on enlève les ** pour la mesure visuelle réelle)
-        clean_word = word.replace("**", "")
-        word_w = draw.textlength(clean_word, font=font)
-        space_w = draw.textlength(" ", font=font) if current_line else 0
-        
-        if current_width + word_w + space_w <= max_width:
-            current_line.append(word)
-            current_width += word_w + space_w
-        else:
-            if current_line:
-                lines.append(current_line)
-            current_line = [word]
-            current_width = word_w
-    if current_line:
-        lines.append(current_line)
-
-    # 5. Calcul position (bloc en bas)
-    ascent, descent = font.getmetrics()
-    line_h = ascent + descent
-    line_stride = line_h + 16
-    total_h = line_h * len(lines) + 16 * (len(lines) - 1)
-    
-    start_y = h - MARGIN - total_h - 60 # Espace pour la source
-    
-    # 6. Dessin ligne par ligne avec gestion du surlignage
-    y = start_y
-    for line_words in lines:
-        # Calcul de la largeur totale de la ligne pour centrer
-        line_total_w = 0
-        processed_words = []
-        for word in line_words:
-            is_highlight = word.startswith("**") and word.endswith("**")
-            clean_w = word.replace("**", "")
-            w_word = draw.textlength(clean_w, font=font)
+    # 2. LOGO NYAVODROID (Remplacement du badge Cultination)
+    logo_path = PROFILE_IMAGE_PATH # assets/profile.png
+    if os.path.isfile(logo_path):
+        try:
+            logo = Image.open(logo_path).convert("RGBA")
+            # Redimensionner le logo (ex: 100px de large)
+            logo_size = 100
+            logo = logo.resize((logo_size, logo_size), Image.LANCZOS)
             
-            if is_highlight:
-                # Largeur avec padding pour le fond blanc
-                w_word += 24 
-            processed_words.append((clean_w, is_highlight, w_word))
-            line_total_w += w_word + 8 # 8px d'espace entre mots
-        
-        # Position X de départ (centrée)
-        x_cursor = (w - line_total_w) // 2
-        
-        for clean_w, is_highlight, w_word in processed_words:
-            if is_highlight:
-                # Dessin du fond blanc
-                pad_hl = 12
-                hl_h = line_h + 8
-                draw.rectangle(
-                    [x_cursor, y - 4, x_cursor + w_word, y + hl_h - 4], 
-                    fill=COLORS["blanc"]
-                )
-                # Texte noir dessus
-                draw.text((x_cursor + pad_hl, y), clean_w, font=font, fill=COLORS["noir"])
-                x_cursor += w_word + 8
-            else:
-                # Texte blanc avec ombre portée noire (simulée par un décalage)
-                draw.text((x_cursor + 2, y + 2), clean_w, font=font, fill=(0, 0, 0, 180)) # Ombre
-                draw.text((x_cursor, y), clean_w, font=font, fill=COLORS["blanc"])
-                x_cursor += w_word + 8
-                
-        y += line_stride
+            # Création d'un masque circulaire pour le logo (optionnel, plus propre)
+            mask = Image.new("L", (logo_size, logo_size), 0)
+            ImageDraw.Draw(mask).ellipse((0, 0, logo_size, logo_size), fill=255)
+            
+            # Position : Haut Gauche
+            pos_x, pos_y = MARGIN, MARGIN
+            img.paste(logo, (pos_x, pos_y), mask)
+        except Exception as e:
+            print(f"⚠️ Erreur chargement logo : {e}")
 
-    # 7. Source (tout en bas, petit)
+    # 3. Fonction helper pour dessiner un bloc avec surlignage **
+    def draw_hierarchical_block(text, font, y_start, is_title=False):
+        if not text: return y_start
+        
+        clean_t = clean_text(text)
+        words = clean_t.split()
+        lines = []
+        curr_line, curr_w = [], 0
+        max_w = w - 2 * MARGIN
+        
+        for word in words:
+            cw = word.replace("**", "")
+            ww = draw.textlength(cw, font=font) + (20 if "**" in word else 0)
+            sp = draw.textlength(" ", font=font) if curr_line else 0
+            if curr_w + ww + sp <= max_w:
+                curr_line.append(word); curr_w += ww + sp
+            else:
+                if curr_line: lines.append(curr_line)
+                curr_line, curr_w = [word], ww
+        if curr_line: lines.append(curr_line)
+
+        ascent, descent = font.getmetrics()
+        lh = ascent + descent
+        stride = lh + (16 if is_title else 10)
+        
+        y = y_start
+        for line_words in lines:
+            lw = 0
+            processed = []
+            for word in line_words:
+                hl = word.startswith("**") and word.endswith("**")
+                cw = word.replace("**", "")
+                ww = draw.textlength(cw, font=font) + (20 if hl else 0)
+                processed.append((cw, hl, ww)); lw += ww + 8
+            
+            x = (w - lw) // 2
+            for cw, hl, ww in processed:
+                if hl:
+                    draw.rectangle([x, y-2, x+ww, y+lh+4], fill=COLORS["blanc"])
+                    draw.text((x+10, y), cw, font=font, fill=COLORS["noir"])
+                else:
+                    draw.text((x+2, y+2), cw, font=font, fill=(0,0,0,150)) # Ombre
+                    draw.text((x, y), cw, font=font, fill=COLORS["blanc"])
+                x += ww + 8
+            y += stride
+        return y
+
+    # 4. Rendu Hiérarchique
+    font_title = get_font(58, bold=True)
+    font_detail = get_font(36, bold=False)
+    
+    # Titre (Fait Choc)
+    draw_hierarchical_block(fait_choc, font_title, h - MARGIN - 180, is_title=True)
+    
+    # Détail (Conséquence)
+    draw_hierarchical_block(consequence, font_detail, h - MARGIN - 90, is_title=False)
+
+    # 5. Source
     if source:
-        font_src = get_font(22, bold=False)
-        src_text = clean_text(source)
-        # Centré aussi
-        src_w = draw.textlength(f"Source : {src_text}", font=font_src)
-        draw.text(((w - src_w)//2, h - MARGIN - 25), f"Source : {src_text}", font=font_src, fill=COLORS["gris_clair"])
+        font_src = get_font(20, bold=False)
+        st = clean_text(source)
+        sw = draw.textlength(f"Source : {st}", font=font_src)
+        draw.text(((w-sw)//2, h - MARGIN - 25), f"Source : {st}", font=font_src, fill=COLORS["gris_clair"])
 
     img.convert("RGB").save(image_out)
