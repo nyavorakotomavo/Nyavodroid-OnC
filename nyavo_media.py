@@ -522,17 +522,12 @@ def _check_img(chemin: str, expected_size: tuple[int, int] | None = None) -> Non
 def image_avec_fallback(prompt: str, gemini_key: str, chemin: str,
                         size: tuple[int, int] | None = None,
                         use_pexels: bool = False, pexels_query: str = "") -> None:
-    """
-    Génère une image (IA) ou utilise Pexels selon le flag.
-    Si use_pexels est True, tente Pexels d'abord, puis fallback IA.
-    """
     if size is None:
         size = DEFAULT_IMG_SIZE
 
-    prompt = clean_text(prompt) + ", high quality, sharp focus, no stretching, no distortion"
+    prompt = clean_text(prompt) + ", high quality, sharp focus, no stretching, no distortion, no text, no letters, no words, no typography"
     erreurs = []
 
-    # Si Pexels demandé, essayer d'abord
     if use_pexels and pexels_query:
         print(f"    🖼️ Pexels (recherche : {pexels_query})...")
         if get_image_from_pexels(pexels_query, chemin, size):
