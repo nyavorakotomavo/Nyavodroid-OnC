@@ -18,7 +18,7 @@ import nyavo_media as M
 from content_config import (
     PILLAR_KEYS, PILLAR_WEIGHTS, PILLARS, STORY_PROMPTS,
     STYLE_IMAGE_SUFFIX, SUJETS_PAR_PILIER, TON_EDITORIAL,
-    HOOK_FONTSIZE, EXPL_FONTSIZE, DETAIL_FONTSIZE, MARGIN,
+    ACCROCHE_FONTSIZE, FAIT_CHOC_FONTSIZE, CONSEQUENCE_FONTSIZE, SOURCE_FONTSIZE, MARGIN,
     EXPRESSIONS_DIR, PROFILE_IMAGE_PATH, EMOJIS_DIR
 )
 
@@ -110,27 +110,20 @@ def choisir_pilier() -> str:
 #  FORMAT 1 : TEXTE SEUL (nouveau : fond Pillow)
 # ══════════════════════════════════════════════
 def generer_post_texte_seul(pilier: str) -> (str, str):
-    """Génère un texte engageant et l'image de fond correspondante.
-    Retourne (texte, chemin_image)."""
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
-    style = random.choice(STORY_PROMPTS)
     prompt = (
-        f"Tu es Nyavodroid. Rédige une question courte et engageante pour les abonnés "
-        f"sur le thème suivant : {sujet}. "
-        f"Ton : {TON_EDITORIAL}. "
-        "Maximum 15 mots. Pas de hashtags, pas de lien. "
-        "Juste la question, sans guillemets, sans signature."
+        "Tu es Nyavodroid. Rédige UNIQUEMENT en français et EXTRÊMEMENT COURT :\n"
+        "1 phrase de contexte + 1 fait choc avec un chiffre, maximum 15 mots.\n"
+        f"Sujet : {sujet}. {TON_EDITORIAL}"
     )
     print(f"  📝 Génération texte post seul...\n     Sujet : {sujet}")
     texte = M.texte_avec_fallback(prompt, GEMINI_API_KEY, "(post texte)")
     texte = M.clean_text(texte)
-    # Nettoyage backslash
     texte = clean_backslash(texte)
     print(f"  ✅ Texte : « {texte} »")
 
-    # Génération de l'image de fond avec Pillow
     chemin_image = "post_text_image.png"
-    M.generer_fond_texte_seul(texte, chemin_image)
+    M.generer_fond_texte_seul(texte, chemin_image)   # fond violet avec le texte centré
     return texte, chemin_image
 
 
@@ -179,16 +172,11 @@ def _get_emoji_path(emoji_char: str) -> str | None:
     return None
 
 
-def incruster_texte_hierarchique_post(image_in: str, hook: str, explication: str, detail: str, image_out: str) -> None:
-    """
-    Incruste les 3 niveaux de texte sur une image 4:5 avec positions dynamiques (anti-chevauchement).
-    """
-    # 1. Scale/crop pour garantir le ratio 4:5
+def incruster_texte_hierarchique_post(image_in: str, contexte: str, fait_choc: str, consequence: str, source: str, image_out: str) -> None:
+    # 1. Scale/crop 4:5 (comme avant)
     try:
-        cmd = [
-            "ffprobe", "-v", "error", "-select_streams", "v:0",
-            "-show_entries", "stream=width,height", "-of", "csv=p=0", image_in
-        ]
+        cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
+               "-show_entries", "stream=width,height", "-of", "csv=p=0", image_in]
         out = subprocess.run(cmd, capture_output=True, text=True, check=True)
         w_orig, h_orig = map(int, out.stdout.strip().split(','))
         ratio_orig = w_orig / h_orig
@@ -205,128 +193,75 @@ def incruster_texte_hierarchique_post(image_in: str, hook: str, explication: str
                 f"crop={POST_WIDTH}:{POST_HEIGHT},"
                 "format=rgba"
             )
-    except Exception:
-        scale_filter = (
-            f"scale={POST_WIDTH}:{POST_HEIGHT}:force_original_aspect_ratio=increase,"
-            f"crop={POST_WIDTH}:{POST_HEIGHT},"
-            "format=rgba"
-        )
+    except:
+        scale_filter = f"scale={POST_WIDTH}:{POST_HEIGHT},format=rgba"
 
-    # 2. Nettoyage des textes
-    hook = clean_backslash(hook)
-    explication = clean_backslash(explication)
-    detail = clean_backslash(detail)
+    # Nettoyage
+    contexte = clean_backslash(M.clean_text(contexte))
+    fait_choc = clean_backslash(M.clean_text(fait_choc))
+    consequence = clean_backslash(M.clean_text(consequence))
+    source = clean_backslash(M.clean_text(source))
 
-    # 3. Extraction de l'emoji du début du hook (s'il y en a un)
-    emoji_char = None
-    if hook and ord(hook[0]) > 127:
-        # On considère que le premier caractère est un emoji (unicode non ASCII)
-        emoji_char = hook[0]
-        hook = hook[1:].strip()
-    # Si le hook commence par un emoji après un espace, on le capture aussi
-    if not emoji_char and hook and ord(hook[0]) > 127:
-        emoji_char = hook[0]
-        hook = hook[1:].strip()
+    def wrap(t, max_chars): return wrap_text(t, max_chars) if t else ""
+    ctx_w = wrap(contexte, 30)
+    fait_w = wrap(fait_choc, 22)
+    cons_w = wrap(consequence, 35)
+    src_w = wrap(source, 45)
 
-    emoji_path = _get_emoji_path(emoji_char) if emoji_char else None
+    # Positions (canvas 1080x1350)
+    y_ctx = MARGIN
+    y_fait = 180          # laisse de la place pour le contexte
+    y_cons = y_fait + 90 + 15
+    y_src = POST_HEIGHT - MARGIN - 30
 
-    # 4. Wrapping des textes
-    # On limite la largeur pour tenir dans les marges
-    max_chars_hook = 18
-    max_chars_expl = 30
-    max_chars_detail = 40
-    hook_wrapped = wrap_text(hook, max_chars_hook)
-    expl_wrapped = wrap_text(explication, max_chars_expl)
-    detail_wrapped = wrap_text(detail, max_chars_detail)
-
-    hook_esc = escape_text(hook_wrapped) if hook_wrapped else ""
-    expl_esc = escape_text(expl_wrapped) if expl_wrapped else ""
-    detail_esc = escape_text(detail_wrapped) if detail_wrapped else ""
-
-    # 5. Calcul des positions Y dynamiques
-    # Hauteur d'une ligne approximative pour chaque taille (en px)
-    line_hook = int(HOOK_FONTSIZE * 1.3)
-    line_expl = int(EXPL_FONTSIZE * 1.3)
-    line_detail = int(DETAIL_FONTSIZE * 1.3)
-
-    y_hook = MARGIN
-    nb_lignes_hook = count_lines(hook_wrapped) if hook_wrapped else 0
-    hauteur_hook = nb_lignes_hook * line_hook
-
-    y_expl = y_hook + hauteur_hook + 20  # marge entre hook et explication
-    nb_lignes_expl = count_lines(expl_wrapped) if expl_wrapped else 0
-    hauteur_expl = nb_lignes_expl * line_expl
-
-    # Détail en bas
-    y_detail = POST_HEIGHT - MARGIN - line_detail
-
-    # 6. Construction des filtres drawtext
     filtres = []
-
-    if hook_esc:
+    if ctx_w:
+        filtres.append(
+            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
+            f"text='{escape_text(ctx_w)}':fontcolor=0xFFFFFF:fontsize={ACCROCHE_FONTSIZE}:"
+            f"x=(w-text_w)/2:y={y_ctx}:shadowcolor=0x000000@0.3:shadowx=1:shadowy=2"
+        )
+    if fait_w:
+        box_w, box_h = 600, 80
+        box_x = (POST_WIDTH - box_w)//2
+        box_y = y_fait - 10
+        filtres.append(
+            f"drawbox=x={box_x}:y={box_y}:w={box_w}:h={box_h}:color=0xFFFFFF@0.85:t=fill"
+        )
         filtres.append(
             f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-            f"text='{hook_esc}':fontcolor=0xFFFFFF:fontsize={HOOK_FONTSIZE}:"
-            f"x=(w-text_w)/2:y={y_hook}:"
-            f"shadowcolor=0xEA4FD9@0.6:shadowx=0:shadowy=4"
+            f"text='{escape_text(fait_w)}':fontcolor=0x2D1B4E:fontsize={FAIT_CHOC_FONTSIZE}:"
+            f"x=(w-text_w)/2:y={y_fait}"
         )
-    if expl_esc:
+    if cons_w:
         filtres.append(
             f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
-            f"text='{expl_esc}':fontcolor=0xFFFFFF:fontsize={EXPL_FONTSIZE}:"
-            f"x=(w-text_w)/2:y={y_expl}:"
-            f"shadowcolor=0x000000@0.4:shadowx=1:shadowy=2"
+            f"text='{escape_text(cons_w)}':fontcolor=0xFFFFFF:fontsize={CONSEQUENCE_FONTSIZE}:"
+            f"x=(w-text_w)/2:y={y_cons}"
         )
-    if detail_esc:
+    if src_w:
         filtres.append(
             f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
-            f"text='{detail_esc}':fontcolor=0xCCCCCC:fontsize={DETAIL_FONTSIZE}:"
-            f"x=(w-text_w)/2:y={y_detail}"
+            f"text='Source : {escape_text(src_w)}':fontcolor=0xCCCCCC:fontsize={SOURCE_FONTSIZE}:"
+            f"x={MARGIN}:y={y_src}"
         )
 
-    filtre_texte = ",".join([scale_filter] + filtres)
+    filtre_texte = scale_filter
+    if filtres:
+        filtre_texte += "," + ",".join(filtres)
 
-    # 7. Image temporaire après incrustation texte
-    temp_text = "post_text_incrust.png"
+    temp_text = "post_text_cult.png"
     try:
         subprocess.run(
             ["ffmpeg", "-i", image_in, "-vf", filtre_texte, "-frames:v", "1", "-y", temp_text],
             check=True, capture_output=True, text=True
         )
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"ffmpeg texte post échec (code {e.returncode}) :\n{e.stderr[:500]}")
+        raise RuntimeError(f"ffmpeg texte post échec : {e.stderr[:500]}")
 
-    # 8. Si emoji disponible, on le superpose au-dessus du hook (en haut à gauche du hook)
-    if emoji_path:
-        # Position : à gauche du hook, centré verticalement avec la première ligne du hook
-        emoji_size = 80  # un peu plus petit que le hook
-        emoji_x = (POST_WIDTH - 500) // 2  # approximation, on pourrait centrer avec le texte mais on simplifie
-        # On va plutôt centrer l'emoji à gauche de la zone de texte, aligné sur y_hook
-        # On calcule la largeur approximative du hook
-        # On utilise ffprobe pour obtenir la largeur du texte? Pas possible. On peut centrer l'emoji avec le hook en utilisant overlay.
-        # On va faire un filtre supplémentaire: on crée une entrée pour l'emoji, on le redimensionne et on l'overlay à une position approximative.
-        emo_filter = (
-            f"[1:v]scale={emoji_size}:-1[emo];"
-            f"[0:v][emo]overlay=400:{y_hook + (line_hook - emoji_size)//2}"
-        )
-        temp_emo = "post_text_emo.png"
-        try:
-            subprocess.run(
-                ["ffmpeg", "-i", temp_text, "-i", emoji_path,
-                 "-filter_complex", emo_filter,
-                 "-frames:v", "1", "-y", temp_emo],
-                check=True, capture_output=True, text=True
-            )
-            os.replace(temp_emo, temp_text)
-        except subprocess.CalledProcessError:
-            # Si l'overlay emoji échoue, on garde sans
-            pass
-
-    # 9. Watermark double (expression + profil)
-    M.overlay_watermark(temp_text, image_out)
+    M.overlay_watermark(temp_text, image_out, source_text=source)
     if os.path.exists(temp_text):
         os.remove(temp_text)
-
 
 def publier_image_texte(pilier: str) -> dict:
     label = PILLARS[pilier]["label"]
@@ -334,20 +269,15 @@ def publier_image_texte(pilier: str) -> dict:
     categorie = PILLARS[pilier].get("categorie", "tech")
 
     # --- Génération du contenu structuré (JSON) ---
-    prompt = (
-        "Tu es Nyavodroid, la page tech premium.\n"
-        f"Axe : {label}\nSujet : {sujet}\n\n"
-        "Génère UNIQUEMENT un JSON avec les clés :\n"
-        "  \"hook\" : accroche choc (max 10 mots), commence par un emoji pertinent\n"
-        "  \"explication\" : 2-3 lignes simples, valeur concrète\n"
-        "  \"detail\" : précision chiffrée ou source (1 ligne)\n"
-        "  \"legende_hook\" : phrase d'accroche pour la légende (max 15 mots)\n"
-        "  \"legende_contexte\" : 2-3 lignes de contexte\n"
-        "  \"legende_developpement\" : 2-4 points de valeur\n"
-        "  \"legende_cta\" : question ou appel à l'engagement\n"
-        "  \"hashtags\" : 3 hashtags (sans #Nyavodroid, ajouté automatiquement)\n\n"
-        "Règles : pas de texte hors JSON, ton " + TON_EDITORIAL
-    )
+ prompt = (
+    "Tu es Nyavodroid. Rédige UNIQUEMENT en français et en JSON :\n"
+    '{\n  "contexte": "1 phrase de contexte général",\n'
+    '  "fait_choc": "le chiffre ou fait surprenant (max 8 mots)",\n'
+    '  "consequence": "1 phrase de conséquence concrète",\n'
+    '  "source": "source vérifiable (ex: Nature, 2026)",\n'
+    '  "legende": "légende Facebook en 2-3 lignes (sans hashtags)"\n}\n\n'
+    f"Sujet imposé : {sujet}. {TON_EDITORIAL}"
+)
     print(f"  📝 Génération contenu post image...\n     Axe : {label}\n     Sujet : {sujet}")
     brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, "(post json)")
     brut = brut.strip()
@@ -450,7 +380,6 @@ def publier_image_texte(pilier: str) -> dict:
 #  FORMAT 3 : REEL
 # ══════════════════════════════════════════════
 def _generer_phrases_reel(pilier: str):
-    """Génère les hooks et détails pour chaque acte du Reel (JSON ou fallback)."""
     label = PILLARS[pilier]["label"]
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
 
@@ -459,21 +388,19 @@ def _generer_phrases_reel(pilier: str):
         actes_desc += f"Acte {i} — {a['acte']} : {a['role']}\n  → {a['consigne_texte']}\n"
 
     prompt = (
-        "Tu es Nyavodroid, la page tech immersive.\n\n"
-        f"Axe : {label}\nSujet imposé : {sujet}\n\n"
-        f"MISSION : MINI-HISTOIRE en exactement {NB_IMAGES_REEL} actes.\n"
-        "Pour chaque acte, fournis un 'hook' (phrase choc < 10 mots) et un 'detail' (courte précision, source, chiffre, < 5 mots).\n"
-        "Réponds UNIQUEMENT par un tableau JSON : [{\"hook\": \"...\", \"detail\": \"...\"}, ...]\n"
-        f"Ton : {TON_EDITORIAL}"
+        "Tu es Nyavodroid. Rédige UNIQUEMENT en français.\n"
+        f"Axe : {label}\nSujet : {sujet}\n"
+        f"Pour chaque acte, donne un 'hook' (phrase choc < 10 mots) et un 'detail' (< 5 mots).\n"
+        "Réponds par un tableau JSON : [{\"hook\":\"...\", \"detail\":\"...\"}, ...]\n"
+        f"{TON_EDITORIAL}"
     )
-    print(f"  📝 Génération phrases Reel...\n     Axe : {label}\n     Sujet : {sujet}")
+    print(f"  📝 Génération phrases Reel...")
     brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, f"(Reel : {sujet})")
     brut = brut.strip()
     if brut.startswith("```json"):
         brut = brut[7:]
     if brut.endswith("```"):
         brut = brut[:-3]
-
     try:
         data = json.loads(brut)
         hooks, details = [], []
@@ -481,28 +408,22 @@ def _generer_phrases_reel(pilier: str):
             hooks.append(item.get("hook", ""))
             details.append(item.get("detail", ""))
         if len(hooks) < NB_IMAGES_REEL:
-            raise ValueError("Pas assez d'éléments")
-    except Exception:
-        print("  ⚠️ Fallback en phrases simples...")
-        prompt_simple = (
-            "Tu es Nyavodroid.\n"
-            f"Axe : {label}\nSujet : {sujet}\n"
-            f"Génère {NB_IMAGES_REEL} phrases numérotées (max 10 mots) pour un Reel.\n"
-            f"Format :\n1. Phrase\n2. Phrase\n3. Phrase"
+            raise ValueError("Pas assez")
+    except:
+        # fallback : phrases numérotées
+        prompt2 = (
+            "En français, génère trois phrases numérotées de 10 mots max.\n"
+            f"Sujet : {sujet}\n1.\n2.\n3."
         )
-        brut_simple = M.texte_avec_fallback(prompt_simple, GEMINI_API_KEY, f"(Reel fallback : {sujet})")
+        brut2 = M.texte_avec_fallback(prompt2, GEMINI_API_KEY, "(fallback reel)")
         hooks = []
         details = []
-        for ligne in brut_simple.split("\n"):
-            ligne = M.clean_text(ligne)
-            if ligne and ligne[0].isdigit() and "." in ligne:
+        for ligne in brut2.split("\n"):
+            if ligne.strip() and ligne[0].isdigit():
                 p = M.clean_text(ligne.split(".", 1)[1].strip())
                 if p:
                     hooks.append(p)
                     details.append("")
-        if len(hooks) < NB_IMAGES_REEL:
-            raise ValueError(f"Phrases insuffisantes ({len(hooks)}/{NB_IMAGES_REEL})")
-
     return sujet, hooks[:NB_IMAGES_REEL], details[:NB_IMAGES_REEL]
 
 
@@ -577,8 +498,6 @@ def incruster_texte_reel(image_in: str, hook: str, detail: str, image_out: str) 
         os.replace(temp, image_out)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ffmpeg texte reel échec : {e.stderr[:500]}")
-
-
 def _generer_images_reel(pilier: str, hooks: list, details: list, sujet: str) -> list:
     """Génère les images de chaque scène en 9:16, avec incrustation et watermark."""
     label = PILLARS[pilier]["label"]
@@ -622,12 +541,12 @@ def _generer_images_reel(pilier: str, hooks: list, details: list, sujet: str) ->
             use_pexels=use_pexels, pexels_query=pexels_query
         )
 
-        # Incruster le texte
+        # Incruster le texte (hook + détail)
         incruster_texte_reel(chemin, hook, detail, chemin)
 
-        # Watermark double (sera appliqué à l'image déjà textée)
+        # Appliquer le watermark (sans source)
         watermarked = f"reel_img_wm_{i}.png"
-        M.overlay_watermark(chemin, watermarked)
+        M.overlay_watermark(chemin, watermarked, source_text="")
         os.replace(watermarked, chemin)
 
         chemins.append(chemin)
@@ -703,6 +622,9 @@ def publier_reel(pilier: str) -> dict:
 legende = " | ".join(hooks)
 legende = legende.replace("|", " ")  # enlever les pipes originaux s'il y en a
 legende = legende[:500]  # éviter les rejets pour longueur
+# Construction propre de la légende (max 500 caractères, sans pipe)
+legende = " ".join(hooks)          # phrases séparées par un espace
+legende = legende[:500]            # sécurité longueur pour éviter les rejets
 legende += "\n\n#Nyavodroid"
 
     ep = f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/video_reels"
@@ -736,25 +658,29 @@ legende += "\n\n#Nyavodroid"
 # ══════════════════════════════════════════════
 #  MAIN
 # ══════════════════════════════════════════════
+
 def main() -> None:
-    print("=" * 60)
-    print("🎬 Nyavodroid — Multi-formats [Premium]")
-    print("=" * 60)
+    print("=" * 50)
+    print("🎬 Nyavodroid — Story [Premium Cultination]")
+    print("=" * 50)
     M.verify_fb_token()
-    tc = choisir_type_contenu()
-    pilier = choisir_pilier()
-    labels = {"texte_seul": "📝 Texte seul (image)", "image_texte": "🖼️  Image + Texte", "reel": "🎬 Reel vidéo"}
-    print(f"\n📌 Format : {labels[tc]}\n📌 Pilier : {PILLARS[pilier]['label']}"
-          f"\n📌 Heure  : {datetime.now(timezone.utc).strftime('%H:%M UTC')}\n")
-    if tc == "texte_seul":
-        res = publier_texte_seul(pilier)
-    elif tc == "image_texte":
-        res = publier_image_texte(pilier)
-    else:
-        res = publier_reel(pilier)
-    print(f"\n{'='*60}\n✅ TERMINÉ — {labels[tc]}\n   ID : {res.get('id', res.get('video_id','N/A'))}\n{'='*60}")
 
+    pilier, sujet, contexte, fait_choc, consequence, source = generer_texte_story()
+    print(f"\n📌 Axe   : {PILLARS[pilier]['label']}\n📌 Sujet : {sujet}\n")
+    print(f"   Contexte    : {contexte}")
+    print(f"   Fait choc   : {fait_choc}")
+    print(f"   Conséquence : {consequence}")
+    print(f"   Source      : {source}")
 
+    print("  🖼️  Génération image de fond...")
+    generer_image_story(pilier, sujet, "story_raw.png")
+
+    print("  🎨 Incrustation Cultination (encadré + watermark)...")
+    incruster_texte_hierarchique("story_raw.png", contexte, fait_choc, consequence, source, STORY_IMAGE_PATH)
+
+    pid = uploader_photo_non_publiee(STORY_IMAGE_PATH)
+    res = publier_story(pid)
+    print(f"\n{'='*50}\n✅ TERMINÉ — Story ID : {res.get('id','N/A')}\n{'='*50}")
 if __name__ == "__main__":
     try:
         main()
