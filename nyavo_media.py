@@ -636,3 +636,173 @@ def image_avec_fallback(prompt: str, gemini_key: str, chemin: str,
         erreurs.append(f"Pollinations={e}"); print(f"    ⚠️ Pollinations image : {e}")
 
     raise RuntimeError("Image impossible (tous fournisseurs KO) :\n  " + "\n  ".join(erreurs))
+# ══════════════════════════════════════════════
+#  AUDIO — fournisseurs (Free.ai, Replicate, HF)
+# ══════════════════════════════════════════════
+def _a_freeai(prompt: str, chemin: str) -> None:
+    r = _req(
+        "POST", FREEAI_MUSIC_URL,
+        headers={"Authorization": f"Bearer {FREEAI_API_KEY}", "Content-Type": "application/json"},
+        json_data={"prompt": prompt, "duration": AUDIO_SECONDS},
+        timeout=60,
+    )
+    data = r.json()
+    audio_url = data.get("audio_url")
+    if not audio_url:
+        raise ValueError(f"Free.ai pas d'URL audio : {data}")
+    audio = requests.get(audio_url, timeout=60).content
+    with open(chemin, "wb") as f:
+        f.write(audio)
+
+
+def _a_replicate(prompt: str, chemin: str) -> None:
+    r = _req(
+        "POST", f"https://api.replicate.com/v1/models/{REPLICATE_AUDIO_MODEL}/predictions",
+        headers={"Authorization": f"Token {REPLICATE_API_TOKEN}", "Content-Type": "application/json"},
+        json_data={"input": {"prompt": prompt, "duration": AUDIO_SECONDS}},
+        timeout=30,
+    )
+    pred = r.json()
+    get_url = pred.get("urls", {}).get("get")
+    if not get_url:
+        raise ValueError(f"pas d'url de polling : {pred}")
+    out_url = None
+    for _ in range(40):
+        time.sleep(3)
+        s = requests.get(get_url, headers={"Authorization": f"Token {REPLICATE_API_TOKEN}"}, timeout=20).json()
+        st = s.get("status")
+        if st == "succeeded":
+            out = s.get("output")
+            out_url = out[0] if isinstance(out, list) else out
+            break
+        if st in ("failed", "canceled"):
+            raise ValueError(f"Replicate {st} : {s.get('error')}")
+    if not out_url:
+        raise ValueError("Replicate : timeout polling")
+    audio = requests.get(out_url, timeout=60).content
+    with open(chemin, "wb") as f:
+        f.write(audio)
+
+
+def _a_hf(prompt: str, chemin: str) -> None:
+    r = _req(
+        "POST", f"{HF_INFER_URL}{HF_AUDIO_MODEL}",
+        headers={"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "application/json"},
+        json_data={"inputs": prompt},
+        timeout=120, max_retries=2, retry_delay=8,
+    )
+    ct = r.headers.get("Content-Type", "")
+    if "audio" not in ct:
+        raise ValueError(f"réponse non-audio ({ct}) : {r.text[:200]}")
+    with open(chemin, "wb") as f:
+        f.write(r.content)
+
+
+def audio_avec_fallback(prompt: str, chemin: str) -> bool:
+    if FREEAI_API_KEY:
+        try:
+            print("    🎵 Audio via Free.ai...")
+            _a_freeai(prompt, chemin)
+            print(f"    ✅ Audio Free.ai ({os.path.getsize(chemin):,} o)")
+            return True
+        except Exception as e:
+            print(f"    ⚠️ Free.ai : {e}")
+    if REPLICATE_API_TOKEN:
+        try:
+            print("    🎵 Audio via Replicate...")
+            _a_replicate(prompt, chemin)
+            print(f"    ✅ Audio Replicate ({os.path.getsize(chemin):,} o)")
+            return True
+        except Exception as e:
+            print(f"    ⚠️ Replicate audio : {e}")
+    if HF_TOKEN:
+        try:
+            print("    🎵 Audio via Hugging Face...")
+            _a_hf(prompt, chemin)
+            print(f"    ✅ Audio HF ({os.path.getsize(chemin):,} o)")
+            return True
+        except Exception as e:
+            print(f"    ⚠️ HF audio : {e}")
+    print("    🔇 Aucun audio généré → Reel sans son.")
+    return False
+
+
+# ══════════════════════════════════════════════
+#  WATERMARK DOUBLE (expression + photo profil)
+# ══════════════════════════════════════════════
+def overlay_watermark(image_in: str, image_out: str, source_text: str = "") -> None:
+    """
+    Superpose :
+    - Profil en haut à droite (fixe)
+    - Expression aléatoire en bas à droite
+    - Source en bas à gauche (si source_text non vide)
+    """
+    profile_path = "assets/profile.png"
+    expressions_dir = "assets/expressions"
+    temp = image_out + ".tmp.png"
+    inputs = ["-i", image_in]
+    filter_parts = []
+    stream_idx = 0
+    main_stream = f"[{stream_idx}:v]"
+    stream_idx += 1
+
+    # Profil en haut à droite
+    if os.path.isfile(profile_path):
+        inputs += ["-i", profile_path]
+        filter_parts.append(f"[{stream_idx}:v]scale=80:-1,format=rgba[pfp]")
+        margin = 40
+        filter_parts.append(f"{main_stream}[pfp]overlay=main_w-80-{margin}:{margin}[tmp1]")
+        main_stream = "[tmp1]"
+        stream_idx += 1
+
+    # Expression en bas à droite
+    if os.path.isdir(expressions_dir):
+        emos = [f for f in os.listdir(expressions_dir) if f.lower().endswith('.png')]
+        if emos:
+            chosen = random.choice(emos)
+            emo_path = os.path.join(expressions_dir, chosen)
+            inputs += ["-i", emo_path]
+            try:
+                cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                       "-show_entries", "stream=width,height", "-of", "csv=p=0", emo_path]
+                out = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                w_emo, h_emo = map(int, out.stdout.strip().split(','))
+            except:
+                w_emo, h_emo = 100, 100
+            max_dim = 130
+            if w_emo > h_emo:
+                new_w = max_dim
+                new_h = int(h_emo * max_dim / w_emo)
+            else:
+                new_h = max_dim
+                new_w = int(w_emo * max_dim / h_emo)
+            margin = 40
+            filter_parts.append(f"[{stream_idx}:v]scale={new_w}:{new_h},format=rgba[emo]")
+            filter_parts.append(f"{main_stream}[emo]overlay=main_w-{new_w}-{margin}:main_h-{new_h}-{margin}[tmp2]")
+            main_stream = "[tmp2]"
+            stream_idx += 1
+
+    # Source en bas à gauche (si présente)
+    if source_text:
+        # Nettoyage pour drawtext (guillemets simples échappés)
+        src_clean = source_text.replace("'", "'\\\\''")
+        src_y = "main_h-40"
+        filter_parts.append(
+            f"{main_stream}drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
+            f"text='{src_clean}':fontcolor=0xCCCCCC:fontsize=22:x=40:y={src_y}[tmp3]"
+        )
+        main_stream = "[tmp3]"
+
+    # Finalisation
+    filter_parts.append(f"{main_stream}null[out]")
+    filter_complex = ";".join(filter_parts)
+
+    try:
+        subprocess.run(
+            ["ffmpeg", *inputs, "-filter_complex", filter_complex,
+             "-map", "[out]", "-frames:v", "1", "-y", temp],
+            check=True, capture_output=True, text=True
+        )
+        os.replace(temp, image_out)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"ffmpeg watermark échec : {e.stderr[:500]}")
