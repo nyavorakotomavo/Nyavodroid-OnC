@@ -593,8 +593,6 @@ def _assembler_video(images: list, textes: list, sortie: str) -> None:
         print(f"  ✅ Vidéo : {sortie} ({os.path.getsize(sortie):,} o)")
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ffmpeg échec : {e.stderr[:800]}")
-
-
 def publier_reel(pilier: str) -> dict:
     sujet, hooks, details = _generer_phrases_reel(pilier)
     print(f"\n📌 Axe   : {PILLARS[pilier]['label']}\n📌 Sujet : {sujet}")
