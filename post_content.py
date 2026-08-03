@@ -658,29 +658,23 @@ legende += "\n\n#Nyavodroid"
 # ══════════════════════════════════════════════
 #  MAIN
 # ══════════════════════════════════════════════
-
 def main() -> None:
-    print("=" * 50)
-    print("🎬 Nyavodroid — Story [Premium Cultination]")
-    print("=" * 50)
+    print("=" * 60)
+    print("🎬 Nyavodroid — Multi-formats [Premium]")
+    print("=" * 60)
     M.verify_fb_token()
-
-    pilier, sujet, contexte, fait_choc, consequence, source = generer_texte_story()
-    print(f"\n📌 Axe   : {PILLARS[pilier]['label']}\n📌 Sujet : {sujet}\n")
-    print(f"   Contexte    : {contexte}")
-    print(f"   Fait choc   : {fait_choc}")
-    print(f"   Conséquence : {consequence}")
-    print(f"   Source      : {source}")
-
-    print("  🖼️  Génération image de fond...")
-    generer_image_story(pilier, sujet, "story_raw.png")
-
-    print("  🎨 Incrustation Cultination (encadré + watermark)...")
-    incruster_texte_hierarchique("story_raw.png", contexte, fait_choc, consequence, source, STORY_IMAGE_PATH)
-
-    pid = uploader_photo_non_publiee(STORY_IMAGE_PATH)
-    res = publier_story(pid)
-    print(f"\n{'='*50}\n✅ TERMINÉ — Story ID : {res.get('id','N/A')}\n{'='*50}")
+    tc = choisir_type_contenu()
+    pilier = choisir_pilier()
+    labels = {"texte_seul": "📝 Texte seul (image)", "image_texte": "🖼️  Image + Texte", "reel": "🎬 Reel vidéo"}
+    print(f"\n📌 Format : {labels[tc]}\n📌 Pilier : {PILLARS[pilier]['label']}"
+          f"\n📌 Heure  : {datetime.now(timezone.utc).strftime('%H:%M UTC')}\n")
+    if tc == "texte_seul":
+        res = publier_texte_seul(pilier)
+    elif tc == "image_texte":
+        res = publier_image_texte(pilier)
+    else:
+        res = publier_reel(pilier)
+    print(f"\n{'='*60}\n✅ TERMINÉ — {labels[tc]}\n   ID : {res.get('id', res.get('video_id','N/A'))}\n{'='*60}")
 if __name__ == "__main__":
     try:
         main()
