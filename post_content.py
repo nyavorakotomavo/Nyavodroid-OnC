@@ -425,7 +425,6 @@ def _assembler_video(images: list, textes: list, sortie: str) -> None:
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ffmpeg échec : {e.stderr[:800]}")
 
-
 def publier_reel(pilier: str) -> dict:
     sujet, hooks, details = _generer_phrases_reel(pilier)
     print(f"\n📌 Axe   : {PILLARS[pilier]['label']}\n📌 Sujet : {sujet}")
@@ -437,35 +436,25 @@ def publier_reel(pilier: str) -> dict:
     _generer_audio_reel(pilier)
     _assembler_video(images, hooks, REEL_VIDEO_PATH)
 
-    # Légende propre (max 500 caractères, pas de pipe)
-    legende = " ".join(hooks)
-    legende = legende[:500]
-    legende += "\n\n#Nyavodroid"
+    legende = " ".join(hooks)[:500] + "\n\n#Nyavodroid"
 
-    ep = f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/video_reels"
+    # ✅ Endpoint /videos (fonctionne avec tes permissions actuelles)
+    ep = f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/videos"
+    
     try:
-        print("  📤 Reel — phase 1/3 (start)...")
-        r1 = M._req("POST", ep, data={"upload_phase": "start", "access_token": M.FB_PAGE_ACCESS_TOKEN}, timeout=M.TIMEOUT)
-        init = r1.json()
-        video_id, upload_url = init.get("video_id"), init.get("upload_url")
-        if not video_id or not upload_url:
-            raise ValueError(f"Phase start échouée : {init}")
-        print("  📤 Reel — phase 2/3 (transfer)...")
+        print("  📤 Vidéo — upload direct via /videos...")
         with open(REEL_VIDEO_PATH, "rb") as f:
-            M._req("POST", upload_url,
-                   data={"upload_phase": "transfer", "video_id": video_id, "access_token": M.FB_PAGE_ACCESS_TOKEN},
-                   files={"video_file": (os.path.basename(REEL_VIDEO_PATH), f, "video/mp4")}, timeout=300)
-        print("  📤 Reel — phase 3/3 (finish)...")
-        r3 = M._req("POST", ep, data={
-            "upload_phase": "finish",
-            "video_id": video_id,
-            "access_token": M.FB_PAGE_ACCESS_TOKEN,
-            "description": legende
-        }, timeout=M.TIMEOUT)
-        print(f"  ✅ Reel publié — Video ID : {video_id}")
-        return r3.json()
+            r = M._req("POST", ep,
+                       data={"description": legende, "access_token": M.FB_PAGE_ACCESS_TOKEN},
+                       files={"source": (os.path.basename(REEL_VIDEO_PATH), f, "video/mp4")},
+                       timeout=300)
+        res = r.json()
+        if "id" not in res:
+            raise ValueError(f"Réponse FB inattendue : {res}")
+        print(f"  ✅ Vidéo publiée — ID : {res['id']}")
+        return res
     except requests.exceptions.HTTPError as e:
-        raise M.fb_error(e, "Reel vidéo") from e
+        raise M.fb_error(e, "vidéo") from e
     except OSError as e:
         raise RuntimeError(f"Fichier vidéo illisible : {e}") from e
 
