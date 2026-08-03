@@ -997,6 +997,41 @@ def _measure_block_height(lines, font, padding):
 # ══════════════════════════════════════════════
 #  MOTEUR PRINCIPAL — HIÉRARCHIE + LOGO NYAVODROID (v2 corrigée)
 # ══════════════════════════════════════════════
+TOP_SAFE = 170   # zone haute couverte par l'UI Facebook
+BOT_SAFE = 190   # zone basse couverte par l'UI Facebook
+
+def _apply_logo(img, size=120):
+    """Colle le logo rond (assets/profile.png) en haut à gauche, hors zone UI."""
+    if os.path.isfile(PROFILE_IMAGE_PATH):
+        try:
+            logo = Image.open(PROFILE_IMAGE_PATH).convert("RGBA").resize((size, size), Image.LANCZOS)
+            mask = Image.new("L", (size, size), 0)
+            ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
+            img.paste(logo, (MARGIN, TOP_SAFE), mask)
+        except Exception as e:
+            print(f"⚠️ Logo : {e}")
+    else:
+        print(f"⚠️ Logo introuvable : {PROFILE_IMAGE_PATH}")
+    return img
+
+def _clean_keep_stars(t):
+    """Nettoie les caractères invisibles MAIS conserve les ** du surlignage."""
+    t = re.sub(r'[‎‏‍‌‬\ufeff\u00ad⁠᠎‪-‮⁦-⁩]', '', t or "")
+    return ''.join(c for c in t if c.isprintable() or c in '\n\t').strip()
+
+def _truncate(t, max_chars):
+    """Coupe proprement un texte trop long (garde-fou anti-pavé)."""
+    t = t.strip()
+    if t.count("**") % 2 == 1:
+        t = t.replace("**", "")
+    if len(t) <= max_chars:
+        return t
+    cut = t[:max_chars].rsplit(" ", 1)[0].rstrip(".,;:!?")
+    if cut.count("**") % 2 == 1:
+        cut = cut.replace("**", "")
+    return cut + "…"
+
+
 def incruster_texte_pillow(image_in, contexte, fait_choc, consequence, source,
                            image_out, target_size):
     w, h = target_size
