@@ -606,14 +606,10 @@ def publier_reel(pilier: str) -> dict:
     _generer_audio_reel(pilier)
     _assembler_video(images, hooks, REEL_VIDEO_PATH)
 
- # Nettoyage : retirer les pipes, limiter à 500 caractères
-legende = " | ".join(hooks)
-legende = legende.replace("|", " ")  # enlever les pipes originaux s'il y en a
-legende = legende[:500]  # éviter les rejets pour longueur
-# Construction propre de la légende (max 500 caractères, sans pipe)
-legende = " ".join(hooks)          # phrases séparées par un espace
-legende = legende[:500]            # sécurité longueur pour éviter les rejets
-legende += "\n\n#Nyavodroid"
+    # Légende propre (max 500 caractères, pas de pipe)
+    legende = " ".join(hooks)
+    legende = legende[:500]
+    legende += "\n\n#Nyavodroid"
 
     ep = f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/video_reels"
     try:
