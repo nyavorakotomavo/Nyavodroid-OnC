@@ -132,7 +132,9 @@ def generer_image_story(pilier: str, sujet: str, chemin: str) -> None:
 #  INCRUSTATION DE TEXTE DYNAMIQUE + EMOJI IMAGE + WATERMARK DOUBLE
 # ══════════════════════════════════════════════
 def incruster_texte_hierarchique(image_in: str, contexte: str, fait_choc: str, consequence: str, source: str, image_out: str) -> None:
-    # 1. Scale/crop 9:16
+    # 1. Définition sécurisée de scale_filter
+    scale_filter = f"scale={STORY_WIDTH}:{STORY_HEIGHT},format=rgba"  # valeur par défaut
+
     try:
         cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
                "-show_entries", "stream=width,height", "-of", "csv=p=0", image_in]
@@ -152,8 +154,8 @@ def incruster_texte_hierarchique(image_in: str, contexte: str, fait_choc: str, c
                 f"crop={STORY_WIDTH}:{STORY_HEIGHT},"
                 "format=rgba"
             )
-    except:
-        scale_filter = f"scale={STORY_WIDTH}:{STORY_HEIGHT},format=rgba"
+    except Exception:
+        pass
 
     # 2. Nettoyage
     contexte = clean_backslash(M.clean_text(contexte))
@@ -167,7 +169,6 @@ def incruster_texte_hierarchique(image_in: str, contexte: str, fait_choc: str, c
     cons_w = wrap(consequence, 35)
     src_w = wrap(source, 45)
 
-    # Positions verticales fixes
     y_ctx = MARGIN
     y_fait = y_ctx + 80 + 20
     y_cons = y_fait + 90 + 20
@@ -182,7 +183,6 @@ def incruster_texte_hierarchique(image_in: str, contexte: str, fait_choc: str, c
             f"box=1:boxcolor=0x0D0D0D@0.7:boxborderw=20"
         )
     if fait_w:
-        # Encadré blanc, texte violet sans ombre
         box_w, box_h = 600, 80
         box_x = (STORY_WIDTH - box_w)//2
         box_y = y_fait - 10
@@ -222,7 +222,6 @@ def incruster_texte_hierarchique(image_in: str, contexte: str, fait_choc: str, c
     M.overlay_watermark(temp_text, image_out, source_text=source)
     if os.path.exists(temp_text):
         os.remove(temp_text)
-
 
 # ══════════════════════════════════════════════
 #  PUBLICATION
