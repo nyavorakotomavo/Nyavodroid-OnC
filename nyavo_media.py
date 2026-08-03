@@ -481,11 +481,23 @@ def download_pexels_image(photo: dict, chemin: str, size: tuple[int, int] | None
         return False
 
 
+def _clean_pexels_query(query: str) -> str:
+    """Extrait les mots concrets pour Pexels (vire les mots vides français)."""
+    stop = {"comment", "pourquoi", "les", "des", "une", "un", "le", "la", "de", "du", "en", "et",
+            "au", "aux", "sur", "secrets", "fonctionnement", "coulisses", "explique", "simplement",
+            "vraiment", "reellement", "fonctionne", "marche", "quel", "quelle", "est", "sont",
+            "ou", "on", "qu", "l", "d", "s", "cache", "mecanismes", "vrai", "duel", "ou", "en"}
+    mots = re.findall(r"[\w]+", query, flags=re.UNICODE)
+    kept = [m for m in mots if m.lower() not in stop and len(m) > 2]
+    return " ".join(kept[:4]) or query
+
 def get_image_from_pexels(query: str, chemin: str, size: tuple[int, int] | None = None) -> bool:
-    photos = search_pexels(query)
-    for photo in photos:
-        if download_pexels_image(photo, chemin, size):
-            return True
+    for q in dict.fromkeys([query, _clean_pexels_query(query)]):
+        photos = search_pexels(q)
+        for photo in photos:
+            if download_pexels_image(photo, chemin, size):
+                print(f"    ✅ Pexels OK (requête : {q})")
+                return True
     return False
 # ══════════════════════════════════════════════
 #  CROP vers un ratio cible
@@ -731,75 +743,45 @@ def audio_avec_fallback(prompt: str, chemin: str) -> bool:
 #  WATERMARK DOUBLE (expression + photo profil)
 # ══════════════════════════════════════════════
 def overlay_watermark(image_in: str, image_out: str, source_text: str = "") -> None:
-    """
-    Superpose :
-    - Profil en haut à droite (fixe)
-    - Expression aléatoire en bas à droite
-    - Source en bas à gauche (si source_text non vide)
-    """
-    profile_path = "assets/profile.png"
-    expressions_dir = "assets/expressions"
+    """Expression aléatoire en bas à droite (hors zone UI). Logo géré par _apply_logo."""
     temp = image_out + ".tmp.png"
     inputs = ["-i", image_in]
     filter_parts = []
-    stream_idx = 0
-    main_stream = f"[{stream_idx}:v]"
-    stream_idx += 1
+    main_stream = "[0:v]"
 
-    # Profil en haut à droite
-    if os.path.isfile(profile_path):
-        inputs += ["-i", profile_path]
-        filter_parts.append(f"[{stream_idx}:v]scale=80:-1,format=rgba[pfp]")
-        margin = 40
-        filter_parts.append(f"{main_stream}[pfp]overlay=main_w-80-{margin}:{margin}[tmp1]")
-        main_stream = "[tmp1]"
-        stream_idx += 1
-
-    # Expression en bas à droite
-    if os.path.isdir(expressions_dir):
-        emos = [f for f in os.listdir(expressions_dir) if f.lower().endswith('.png')]
+    if os.path.isdir(EXPRESSIONS_DIR):
+        emos = [f for f in os.listdir(EXPRESSIONS_DIR) if f.lower().endswith('.png')]
         if emos:
-            chosen = random.choice(emos)
-            emo_path = os.path.join(expressions_dir, chosen)
+            emo_path = os.path.join(EXPRESSIONS_DIR, random.choice(emos))
             inputs += ["-i", emo_path]
             try:
                 cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
                        "-show_entries", "stream=width,height", "-of", "csv=p=0", emo_path]
                 out = subprocess.run(cmd, capture_output=True, text=True, check=True)
                 w_emo, h_emo = map(int, out.stdout.strip().split(','))
-            except:
+            except Exception:
                 w_emo, h_emo = 100, 100
-            max_dim = 130
+            max_dim = 120
             if w_emo > h_emo:
-                new_w = max_dim
-                new_h = int(h_emo * max_dim / w_emo)
+                new_w, new_h = max_dim, int(h_emo * max_dim / w_emo)
             else:
-                new_h = max_dim
-                new_w = int(w_emo * max_dim / h_emo)
-            margin = 40
-            filter_parts.append(f"[{stream_idx}:v]scale={new_w}:{new_h},format=rgba[emo]")
-            filter_parts.append(f"{main_stream}[emo]overlay=main_w-{new_w}-{margin}:main_h-{new_h}-{margin}[tmp2]")
+                new_h, new_w = max_dim, int(w_emo * max_dim / h_emo)
+            filter_parts.append(f"[1:v]scale={new_w}:{new_h},format=rgba[emo]")
+            filter_parts.append(f"{main_stream}[emo]overlay=main_w-{new_w}-40:main_h-{new_h}-{BOT_SAFE}[tmp2]")
             main_stream = "[tmp2]"
-            stream_idx += 1
 
-    # Source en bas à gauche (si présente)
     if source_text:
-        # Nettoyage pour drawtext (guillemets simples échappés)
         src_clean = source_text.replace("'", "'\\\\''")
-        src_y = "main_h-40"
         filter_parts.append(
             f"{main_stream}drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
-            f"text='{src_clean}':fontcolor=0xCCCCCC:fontsize=22:x=40:y={src_y}[tmp3]"
+            f"text='{src_clean}':fontcolor=0xCCCCCC:fontsize=22:x=40:y=main_h-{BOT_SAFE}[tmp3]"
         )
         main_stream = "[tmp3]"
 
-    # Finalisation
     filter_parts.append(f"{main_stream}null[out]")
-    filter_complex = ";".join(filter_parts)
-
     try:
         subprocess.run(
-            ["ffmpeg", *inputs, "-filter_complex", filter_complex,
+            ["ffmpeg", *inputs, "-filter_complex", ";".join(filter_parts),
              "-map", "[out]", "-frames:v", "1", "-y", temp],
             check=True, capture_output=True, text=True
         )
@@ -1031,131 +1013,79 @@ def _truncate(t, max_chars):
         cut = cut.replace("**", "")
     return cut + "…"
 
-
 def incruster_texte_pillow(image_in, contexte, fait_choc, consequence, source,
                            image_out, target_size):
     w, h = target_size
     img = Image.open(image_in).convert("RGBA")
     img = _crop_resize_pillow(img, (w, h))
 
-    # 1. Dégradé noir en bas
+    # Dégradé noir en bas (lisibilité)
     gradient = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    draw_grad = ImageDraw.Draw(gradient)
-    grad_height = int(h * 0.55) 
-    for y in range(grad_height):
-        alpha = int(250 * ((y / grad_height) ** 1.2))
-        draw_grad.line([(0, h - grad_height + y), (w, h - grad_height + y)], fill=(0, 0, 0, alpha))
+    dg = ImageDraw.Draw(gradient)
+    gh = int(h * 0.55)
+    for y in range(gh):
+        a = int(250 * ((y / gh) ** 1.2))
+        dg.line([(0, h - gh + y), (w, h - gh + y)], fill=(0, 0, 0, a))
     img = Image.alpha_composite(img, gradient)
+    img = _apply_logo(img, size=120)
     draw = ImageDraw.Draw(img)
 
-    # 2. LOGO NYAVODROID (avec log debug)
-    logo_path = PROFILE_IMAGE_PATH
-    print(f"  🔍 Recherche logo : {logo_path} → {'✅ Trouvé' if os.path.isfile(logo_path) else '❌ Absent'}")
-    
-    if os.path.isfile(logo_path):
-        try:
-            logo = Image.open(logo_path).convert("RGBA")
-            logo_size = 100
-            logo = logo.resize((logo_size, logo_size), Image.LANCZOS)
-            mask = Image.new("L", (logo_size, logo_size), 0)
-            ImageDraw.Draw(mask).ellipse((0, 0, logo_size, logo_size), fill=255)
-            img.paste(logo, (MARGIN, MARGIN), mask)
-        except Exception as e:
-            print(f"⚠️ Erreur chargement logo : {e}")
-    else:
-        print(f"⚠️ Logo introuvable. Vérifie que le fichier s'appelle bien '{PROFILE_IMAGE_PATH}' (attention à l'orthographe profile vs profil)")
+    # Garde-fous : jamais de pavé, jamais de ** orphelins
+    fait_choc = _truncate(_clean_keep_stars(fait_choc), 90)
+    consequence = _truncate(_clean_keep_stars(consequence), 140)
+    source = clean_text(source or "")
 
-    # 3. Helper corrigé : mesure EXACTE incluant le padding des surlignages
-    def measure_and_wrap(text, font, max_w):
-        """Retourne (lines, line_heights, total_height) avec mesures précises."""
-        if not text: return [], [], 0
-        clean_t = clean_text(text)
-        words = clean_t.split()
-        lines = []
-        curr_line, curr_w = [], 0
-        
-        for word in words:
+    font_title = get_font(54, bold=True)
+    font_detail = get_font(32, bold=False)
+    font_src = get_font(20, bold=False)
+    max_w = w - 2 * MARGIN
+
+    def wrap_words(text, font):
+        lines, cur, cur_w = [], [], 0
+        for word in text.split():
+            hl = word.startswith("**") and word.endswith("**") and len(word) > 4
             cw = word.replace("**", "")
-            is_hl = word.startswith("**") and word.endswith("**")
-            ww = draw.textlength(cw, font=font) + (24 if is_hl else 0)  # 24 = padding highlight
-            sp = draw.textlength(" ", font=font) if curr_line else 0
-            
-            if curr_w + ww + sp <= max_w:
-                curr_line.append(word); curr_w += ww + sp
+            ww = draw.textlength(cw, font=font) + (24 if hl else 0)
+            sp = draw.textlength(" ", font=font) if cur else 0
+            if cur_w + ww + sp <= max_w:
+                cur.append((cw, hl, ww)); cur_w += ww + sp
             else:
-                if curr_line: lines.append(curr_line)
-                curr_line, curr_w = [word], ww
-        if curr_line: lines.append(curr_line)
-        
-        ascent, descent = font.getmetrics()
-        lh = ascent + descent
-        return lines, lh, lh
-    
-    def draw_block(lines, font, lh, y_start, is_title=False):
-        """Dessine un bloc et retourne la hauteur totale consommée."""
-        if not lines: return 0
-        stride = lh + (18 if is_title else 12)
-        max_w = w - 2 * MARGIN
-        
-        y = y_start
-        for line_words in lines:
-            # Calcul largeur réelle de la ligne
-            lw = 0
-            processed = []
-            for word in line_words:
-                hl = word.startswith("**") and word.endswith("**")
-                cw = word.replace("**", "")
-                ww = draw.textlength(cw, font=font) + (24 if hl else 0)
-                processed.append((cw, hl, ww))
-                lw += ww + 8
-            
+                if cur: lines.append(cur)
+                cur, cur_w = [(cw, hl, ww)], ww
+        if cur: lines.append(cur)
+        return lines
+
+    title_lines = wrap_words(fait_choc, font_title) if fait_choc else []
+    detail_lines = wrap_words(consequence, font_detail) if consequence else []
+
+    asc_t, desc_t = font_title.getmetrics(); lh_t, stride_t = asc_t + desc_t, (asc_t + desc_t) + 14
+    asc_d, desc_d = font_detail.getmetrics(); lh_d, stride_d = asc_d + desc_d, (asc_d + desc_d) + 10
+
+    total = (len(title_lines) * stride_t + len(detail_lines) * stride_d
+             + (30 if source else 0) + 36)
+
+    # Ancrage bas, jamais sous le logo, jamais hors cadre
+    y = max(TOP_SAFE + 140, h - BOT_SAFE - total)
+
+    for lines, font, lh, stride in ((title_lines, font_title, lh_t, stride_t),
+                                    (detail_lines, font_detail, lh_d, stride_d)):
+        for line in lines:
+            lw = sum(ww for _, _, ww in line) + 8 * (len(line) - 1)
             x = (w - lw) // 2
-            for cw, hl, ww in processed:
+            for cw, hl, ww in line:
                 if hl:
-                    draw.rectangle([x, y-3, x+ww, y+lh+5], fill=COLORS["blanc"])
-                    draw.text((x+12, y), cw, font=font, fill=COLORS["noir"])
+                    draw.rectangle([x - 2, y - 3, x + ww + 2, y + lh + 5], fill=COLORS["blanc"])
+                    draw.text((x + 12, y), cw, font=font, fill=COLORS["noir"])
                 else:
-                    draw.text((x+2, y+2), cw, font=font, fill=(0,0,0,160))
+                    draw.text((x + 2, y + 2), cw, font=font, fill=(0, 0, 0, 160))
                     draw.text((x, y), cw, font=font, fill=COLORS["blanc"])
                 x += ww + 8
             y += stride
-        
-        return len(lines) * stride
+        y += 18
 
-    # 4. Rendu hiérarchique DYNAMIQUE (plus de positions fixes)
-    font_title = get_font(54, bold=True)
-    font_detail = get_font(34, bold=False)
-    font_src = get_font(20, bold=False)
-    
-    max_w = w - 2 * MARGIN
-    
-    # Mesure d'abord tous les blocs
-    title_lines, title_lh, _ = measure_and_wrap(fait_choc, font_title, max_w)
-    detail_lines, detail_lh, _ = measure_and_wrap(consequence, font_detail, max_w)
-    
-    title_h = draw_block(title_lines, font_title, title_lh, 0, is_title=True) if title_lines else 0
-    detail_h = draw_block(detail_lines, font_detail, detail_lh, 0, is_title=False) if detail_lines else 0
-    
-    src_h = 30 if source else 0
-    gap = 20
-    total_content_h = title_h + detail_h + src_h + (gap * 2)
-    
-    # Position de départ : on ancre en bas et on remonte
-    y_cursor = h - MARGIN - total_content_h
-    
-    # Dessin réel avec positions calculées
-    if title_lines:
-        consumed = draw_block(title_lines, font_title, title_lh, y_cursor, is_title=True)
-        y_cursor += consumed + gap
-    
-    if detail_lines:
-        consumed = draw_block(detail_lines, font_detail, detail_lh, y_cursor, is_title=False)
-        y_cursor += consumed + gap
-    
-    # 5. Source (toujours en dessous, jamais superposée)
     if source:
-        st = clean_text(source)
-        sw = draw.textlength(f"Source : {st}", font=font_src)
-        draw.text(((w-sw)//2, y_cursor), f"Source : {st}", font=font_src, fill=COLORS["gris_clair"])
+        st = f"Source : {source}"
+        sw = draw.textlength(st, font=font_src)
+        draw.text(((w - sw) // 2, h - BOT_SAFE), st, font=font_src, fill=COLORS["gris_clair"])
 
     img.convert("RGB").save(image_out)
