@@ -117,3 +117,195 @@ def publier_texte_seul(pilier: str) -> dict:
         raise M.fb_error(e, "post texte") from e
     except OSError as e:
         raise RuntimeError(f"Fichier image illisible : {e}") from e
+# ══════════════════════════════════════════════
+#  FORMAT 2 : IMAGE + TEXTE (Pexels/IA, hiérarchie Pillow, watermark)
+# ══════════════════════════════════════════════
+def incruster_texte_hierarchique_post(image_in, contexte, fait_choc, consequence, source, image_out):
+    """Incrustation hiérarchique Pillow (post 1080x1350), puis watermark profil+expression."""
+    M.incruster_texte_pillow(image_in, contexte, fait_choc, consequence, source,
+                             image_out, target_size=(POST_WIDTH, POST_HEIGHT))
+    # Watermark profil + expression uniquement (la source est déjà rendue par Pillow)
+    M.overlay_watermark(image_out, image_out, source_text="")
+
+
+def publier_image_texte(pilier: str) -> dict:
+    label = PILLARS[pilier]["label"]
+    sujet = random.choice(SUJETS_PAR_PILIER[pilier])
+    categorie = PILLARS[pilier].get("categorie", "tech")
+
+    # ----- Génération du contenu structuré (JSON) -----
+    prompt = (
+        "Tu es Nyavodroid. Rédige UNIQUEMENT en français et en JSON :\n"
+        '{\n  "contexte": "1 phrase de contexte général",\n'
+        '  "fait_choc": "le chiffre ou fait surprenant (max 8 mots)",\n'
+        '  "consequence": "1 phrase de conséquence concrète",\n'
+        '  "source": "source vérifiable (ex: Nature, 2026)",\n'
+        '  "legende": "légende Facebook en 2-3 lignes (sans hashtags)"\n}\n\n'
+        f"Sujet imposé : {sujet}. {TON_EDITORIAL}"
+    )
+    print(f"  📝 Génération contenu post image...\n     Axe : {label}\n     Sujet : {sujet}")
+    brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, "(post json)")
+    brut = brut.strip()
+    if brut.startswith("```json"):
+        brut = brut[7:]
+    if brut.endswith("```"):
+        brut = brut[:-3]
+
+    try:
+        data = json.loads(brut)
+        contexte = data.get("contexte", "")
+        fait_choc = data.get("fait_choc", "")
+        consequence = data.get("consequence", "")
+        source = data.get("source", "")
+        legende = data.get("legende", "")
+    except Exception:
+        print("  ⚠️ JSON invalide, fallback légende simple.")
+        contexte = brut
+        fait_choc = ""
+        consequence = ""
+        source = ""
+        legende = brut
+
+    # Nettoyage
+    contexte = M.clean_text(contexte)
+    fait_choc = M.clean_text(fait_choc)
+    consequence = M.clean_text(consequence)
+    source = M.clean_text(source)
+
+    # ----- Choix de la source d'image -----
+    use_pexels = (categorie != "tech")
+    if use_pexels:
+        pexels_query = sujet
+        prompt_img = ""
+    else:
+        prompt_img = (
+            f"Illustration verticale 4:5 pour le sujet : {sujet}\n"
+            f"Axe : {label}\nStyle : {STYLE_IMAGE_SUFFIX}"
+        )
+        pexels_query = ""
+
+    print(f"  🖼️  Source image : {'Pexels' if use_pexels else 'IA'}...")
+    M.image_avec_fallback(
+        prompt_img, GEMINI_API_KEY, IMAGE_PATH,
+        size=(POST_WIDTH, POST_HEIGHT),
+        use_pexels=use_pexels, pexels_query=pexels_query
+    )
+
+    # ----- Incrustation du texte hiérarchique + watermark -----
+    if contexte or fait_choc or consequence:
+        print("  🎨 Incrustation texte + watermark double...")
+        incruster_texte_hierarchique_post(IMAGE_PATH, contexte, fait_choc, consequence, source, IMAGE_PATH)
+    else:
+        M.overlay_watermark(IMAGE_PATH, IMAGE_PATH, source_text="")
+
+    # ----- Assemblage de la légende finale -----
+    legende_finale = f"{contexte}\n\n{fait_choc}\n\n{consequence}"
+    if source:
+        legende_finale += f"\n\nSource : {source}"
+    legende_finale += "\n\n#Nyavodroid"
+
+    print(f"\n📌 Axe : {label}\n📌 Sujet : {sujet}\n📌 Légende :\n{legende_finale}\n")
+
+    # ----- Publication -----
+    ep = f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/photos"
+    try:
+        with open(IMAGE_PATH, "rb") as f:
+            r = M._req("POST", ep,
+                       data={"caption": legende_finale, "access_token": M.FB_PAGE_ACCESS_TOKEN},
+                       files={"source": (os.path.basename(IMAGE_PATH), f, "image/png")},
+                       timeout=M.TIMEOUT)
+        res = r.json()
+        if "id" not in res:
+            raise ValueError(f"Réponse FB inattendue : {res}")
+        print(f"  ✅ Image+Texte publié — ID : {res['id']}")
+        return res
+    except requests.exceptions.HTTPError as e:
+        raise M.fb_error(e, "photo + légende") from e
+    except OSError as e:
+        raise RuntimeError(f"Fichier image illisible : {e}") from e
+
+
+# ══════════════════════════════════════════════
+#  FORMAT 3 : REEL — génération des phrases
+# ══════════════════════════════════════════════
+def _generer_phrases_reel(pilier: str):
+    label = PILLARS[pilier]["label"]
+    sujet = random.choice(SUJETS_PAR_PILIER[pilier])
+
+    actes_desc = ""
+    for i, a in enumerate(STRUCTURE_REEL, 1):
+        actes_desc += f"Acte {i} — {a['acte']} : {a['role']}\n  → {a['consigne_texte']}\n"
+
+    prompt = (
+        "Tu es Nyavodroid. Rédige UNIQUEMENT en français.\n"
+        f"Axe : {label}\nSujet : {sujet}\n"
+        f"Pour chaque acte, donne un 'hook' (phrase choc < 10 mots) et un 'detail' (< 5 mots).\n"
+        "Réponds par un tableau JSON : [{\"hook\":\"...\", \"detail\":\"...\"}, ...]\n"
+        f"{TON_EDITORIAL}"
+    )
+    print(f"  📝 Génération phrases Reel...")
+    brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, f"(Reel : {sujet})")
+    brut = brut.strip()
+    if brut.startswith("```json"):
+        brut = brut[7:]
+    if brut.endswith("```"):
+        brut = brut[:-3]
+    try:
+        data = json.loads(brut)
+        hooks, details = [], []
+        for item in data[:NB_IMAGES_REEL]:
+            hooks.append(item.get("hook", ""))
+            details.append(item.get("detail", ""))
+        if len(hooks) < NB_IMAGES_REEL:
+            raise ValueError("Pas assez")
+    except:
+        # fallback : phrases numérotées
+        prompt2 = (
+            "En français, génère trois phrases numérotées de 10 mots max.\n"
+            f"Sujet : {sujet}\n1.\n2.\n3."
+        )
+        brut2 = M.texte_avec_fallback(prompt2, GEMINI_API_KEY, "(fallback reel)")
+        hooks = []
+        details = []
+        for ligne in brut2.split("\n"):
+            if ligne.strip() and ligne[0].isdigit():
+                p = M.clean_text(ligne.split(".", 1)[1].strip())
+                if p:
+                    hooks.append(p)
+                    details.append("")
+    return sujet, hooks[:NB_IMAGES_REEL], details[:NB_IMAGES_REEL]
+
+
+def incruster_texte_reel_pillow(image_in, hook, detail, image_out):
+    """Incruste le hook (grand, centré) et le détail (bas) sur une image de Reel 1080x1920."""
+    w, h = STORY_WIDTH, STORY_HEIGHT
+    img = Image.open(image_in).convert("RGBA")
+    img = M._crop_resize_pillow(img, (w, h))
+    draw = ImageDraw.Draw(img)
+    x_center = w / 2
+    max_width = w - 2 * M.MARGIN
+
+    hook = M.clean_text(hook) if hook else ""
+    detail = M.clean_text(detail) if detail else ""
+
+    font_hook = M.get_font(68, bold=True)
+    font_detail = M.get_font(DETAIL_FONTSIZE, bold=False)
+    usable_width = max_width - 2 * M.BOX_BORDER
+
+    # HOOK — grand, centré dans la moitié haute
+    if hook:
+        hook_lines = M.wrap_text_pillow(hook, font_hook, usable_width)
+        h_hook = M._measure_block_height(hook_lines, font_hook, M.BOX_BORDER)
+        y_hook = int(h * 0.38) - h_hook // 2
+        M.draw_text_block(img, draw, hook_lines, font_hook, x_center, y_hook,
+                          M.COLORS["blanc"], box_color=M.BOX_BG["noir_translucide"])
+
+    # DETAIL — petit, en bas au-dessus de la marge
+    if detail:
+        detail_lines = M.wrap_text_pillow(detail, font_detail, usable_width)
+        h_detail = M._measure_block_height(detail_lines, font_detail, M.BOX_BORDER)
+        y_detail = h - M.MARGIN - h_detail
+        M.draw_text_block(img, draw, detail_lines, font_detail, x_center, y_detail,
+                          M.COLORS["blanc"], box_color=M.BOX_BG["noir_translucide"])
+
+    img.convert("RGB").save(image_out)
