@@ -183,9 +183,33 @@ def _get_emoji_path(emoji_char: str) -> str | None:
     return None
 
 def incruster_texte_hierarchique_post(image_in: str, contexte: str, fait_choc: str, consequence: str, source: str, image_out: str) -> None:
-    # ... (le début avec scale/crop est inchangé)
+    # 1. Définition sécurisée de scale_filter (toujours définie)
+    scale_filter = f"scale={POST_WIDTH}:{POST_HEIGHT},format=rgba"  # valeur par défaut
 
-    # Nettoyage
+    try:
+        cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
+               "-show_entries", "stream=width,height", "-of", "csv=p=0", image_in]
+        out = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        w_orig, h_orig = map(int, out.stdout.strip().split(','))
+        ratio_orig = w_orig / h_orig
+        ratio_cible = POST_WIDTH / POST_HEIGHT
+        if abs(ratio_orig - ratio_cible) > 0.05:
+            scale_filter = (
+                f"scale={POST_WIDTH}:{POST_HEIGHT}:force_original_aspect_ratio=decrease,"
+                f"pad={POST_WIDTH}:{POST_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black,"
+                "format=rgba"
+            )
+        else:
+            scale_filter = (
+                f"scale={POST_WIDTH}:{POST_HEIGHT}:force_original_aspect_ratio=increase,"
+                f"crop={POST_WIDTH}:{POST_HEIGHT},"
+                "format=rgba"
+            )
+    except Exception:
+        # on garde la valeur par défaut déjà assignée
+        pass
+
+    # 2. Nettoyage des textes (identique)
     contexte = clean_backslash(M.clean_text(contexte))
     fait_choc = clean_backslash(M.clean_text(fait_choc))
     consequence = clean_backslash(M.clean_text(consequence))
@@ -204,20 +228,35 @@ def incruster_texte_hierarchique_post(image_in: str, contexte: str, fait_choc: s
 
     filtres = []
     if ctx_w:
-        filtres.append(safe_drawtext(ctx_w, ACCROCHE_FONTSIZE, "0xFFFFFF", "(w-text_w)/2", str(y_ctx),
-                                     box={'color': '0x0D0D0D@0.7', 'borderw': '20'}))
+        filtres.append(
+            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
+            f"text='{escape_text(ctx_w)}':fontcolor=0xFFFFFF:fontsize={ACCROCHE_FONTSIZE}:"
+            f"x=(w-text_w)/2:y={y_ctx}:"
+            f"box=1:boxcolor=0x0D0D0D@0.7:boxborderw=20"
+        )
     if fait_w:
         box_w, box_h = 600, 80
         box_x = (POST_WIDTH - box_w)//2
         box_y = y_fait - 10
         filtres.append(f"drawbox=x={box_x}:y={box_y}:w={box_w}:h={box_h}:color=0xFFFFFF@0.85:t=fill")
-        filtres.append(safe_drawtext(fait_w, FAIT_CHOC_FONTSIZE, "0x2D1B4E", "(w-text_w)/2", str(y_fait), bold=True))
+        filtres.append(
+            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+            f"text='{escape_text(fait_w)}':fontcolor=0x2D1B4E:fontsize={FAIT_CHOC_FONTSIZE}:"
+            f"x=(w-text_w)/2:y={y_fait}"
+        )
     if cons_w:
-        filtres.append(safe_drawtext(cons_w, CONSEQUENCE_FONTSIZE, "0xFFFFFF", "(w-text_w)/2", str(y_cons),
-                                     box={'color': '0x0D0D0D@0.7', 'borderw': '20'}))
+        filtres.append(
+            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
+            f"text='{escape_text(cons_w)}':fontcolor=0xFFFFFF:fontsize={CONSEQUENCE_FONTSIZE}:"
+            f"x=(w-text_w)/2:y={y_cons}:"
+            f"box=1:boxcolor=0x0D0D0D@0.7:boxborderw=20"
+        )
     if src_w:
-        # Pas de box pour la source, police plus petite
-        filtres.append(safe_drawtext(f"Source : {src_w}", SOURCE_FONTSIZE, "0xCCCCCC", str(MARGIN), str(y_src)))
+        filtres.append(
+            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
+            f"text='Source : {escape_text(src_w)}':fontcolor=0xCCCCCC:fontsize={SOURCE_FONTSIZE}:"
+            f"x={MARGIN}:y={y_src}"
+        )
 
     filtre_texte = scale_filter
     if filtres:
@@ -235,103 +274,6 @@ def incruster_texte_hierarchique_post(image_in: str, contexte: str, fait_choc: s
     M.overlay_watermark(temp_text, image_out, source_text=source)
     if os.path.exists(temp_text):
         os.remove(temp_text)
-def publier_image_texte(pilier: str) -> dict:
-    label = PILLARS[pilier]["label"]
-    sujet = random.choice(SUJETS_PAR_PILIER[pilier])
-    categorie = PILLARS[pilier].get("categorie", "tech")
-
-    # ----- Génération du contenu structuré (JSON) -----
-    prompt = (
-        "Tu es Nyavodroid. Rédige UNIQUEMENT en français et en JSON :\n"
-        '{\n  "contexte": "1 phrase de contexte général",\n'
-        '  "fait_choc": "le chiffre ou fait surprenant (max 8 mots)",\n'
-        '  "consequence": "1 phrase de conséquence concrète",\n'
-        '  "source": "source vérifiable (ex: Nature, 2026)",\n'
-        '  "legende": "légende Facebook en 2-3 lignes (sans hashtags)"\n}\n\n'
-        f"Sujet imposé : {sujet}. {TON_EDITORIAL}"
-    )
-    print(f"  📝 Génération contenu post image...\n     Axe : {label}\n     Sujet : {sujet}")
-    brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, "(post json)")
-    brut = brut.strip()
-    if brut.startswith("```json"):
-        brut = brut[7:]
-    if brut.endswith("```"):
-        brut = brut[:-3]
-
-    try:
-        data = json.loads(brut)
-        contexte = data.get("contexte", "")
-        fait_choc = data.get("fait_choc", "")
-        consequence = data.get("consequence", "")
-        source = data.get("source", "")
-        legende = data.get("legende", "")
-    except Exception:
-        print("  ⚠️ JSON invalide, fallback légende simple.")
-        contexte = brut
-        fait_choc = ""
-        consequence = ""
-        source = ""
-        legende = brut
-
-    # Nettoyage
-    contexte = M.clean_text(contexte)
-    fait_choc = M.clean_text(fait_choc)
-    consequence = M.clean_text(consequence)
-    source = M.clean_text(source)
-
-    # ----- Choix de la source d'image -----
-    use_pexels = (categorie != "tech")
-    if use_pexels:
-        pexels_query = sujet
-        prompt_img = ""
-    else:
-        prompt_img = (
-            f"Illustration verticale 4:5 pour le sujet : {sujet}\n"
-            f"Axe : {label}\nStyle : {STYLE_IMAGE_SUFFIX}"
-        )
-        pexels_query = ""
-
-    print(f"  🖼️  Source image : {'Pexels' if use_pexels else 'IA'}...")
-    M.image_avec_fallback(
-        prompt_img, GEMINI_API_KEY, IMAGE_PATH,
-        size=(POST_WIDTH, POST_HEIGHT),
-        use_pexels=use_pexels, pexels_query=pexels_query
-    )
-
-    # ----- Incrustation du texte hiérarchique + watermark -----
-    if contexte or fait_choc or consequence:
-        print("  🎨 Incrustation texte + watermark double...")
-        incruster_texte_hierarchique_post(IMAGE_PATH, contexte, fait_choc, consequence, source, IMAGE_PATH)
-    else:
-        # Même sans texte, on applique le watermark
-        M.overlay_watermark(IMAGE_PATH, IMAGE_PATH, source_text="")
-
-    # ----- Assemblage de la légende finale -----
-    legende_finale = f"{contexte}\n\n{fait_choc}\n\n{consequence}"
-    if source:
-        legende_finale += f"\n\nSource : {source}"
-    legende_finale += "\n\n#Nyavodroid"
-
-    print(f"\n📌 Axe : {label}\n📌 Sujet : {sujet}\n📌 Légende :\n{legende_finale}\n")
-
-    # ----- Publication -----
-    ep = f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/photos"
-    try:
-        with open(IMAGE_PATH, "rb") as f:
-            r = M._req("POST", ep,
-                       data={"caption": legende_finale, "access_token": M.FB_PAGE_ACCESS_TOKEN},
-                       files={"source": (os.path.basename(IMAGE_PATH), f, "image/png")},
-                       timeout=M.TIMEOUT)
-        res = r.json()
-        if "id" not in res:
-            raise ValueError(f"Réponse FB inattendue : {res}")
-        print(f"  ✅ Image+Texte publié — ID : {res['id']}")
-        return res
-    except requests.exceptions.HTTPError as e:
-        raise M.fb_error(e, "photo + légende") from e
-    except OSError as e:
-        raise RuntimeError(f"Fichier image illisible : {e}") from e
-
 
 # ══════════════════════════════════════════════
 #  FIN DE LA PARTIE 1 — LA PARTIE 2 CONTIENT LE FORMAT REEL ET LE MAIN
