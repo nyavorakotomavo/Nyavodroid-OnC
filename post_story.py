@@ -133,7 +133,7 @@ def generer_image_story(pilier: str, sujet: str, chemin: str) -> None:
 # ══════════════════════════════════════════════
 def incruster_texte_hierarchique(image_in: str, contexte: str, fait_choc: str, consequence: str, source: str, image_out: str) -> None:
     # 1. Définition sécurisée de scale_filter
-    scale_filter = f"scale={STORY_WIDTH}:{STORY_HEIGHT},format=rgba"  # valeur par défaut
+    scale_filter = f"scale={STORY_WIDTH}:{STORY_HEIGHT},format=rgba"
 
     try:
         cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
@@ -177,10 +177,8 @@ def incruster_texte_hierarchique(image_in: str, contexte: str, fait_choc: str, c
     filtres = []
     if ctx_w:
         filtres.append(
-            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
-            f"text='{escape_text(ctx_w)}':fontcolor=0xFFFFFF:fontsize={ACCROCHE_FONTSIZE}:"
-            f"x=(w-text_w)/2:y={y_ctx}:"
-            f"box=1:boxcolor=0x0D0D0D@0.7:boxborderw=20"
+            safe_drawtext(ctx_w, ACCROCHE_FONTSIZE, "0xFFFFFF", "(w-text_w)/2", str(y_ctx),
+                          box={'color': '0x0D0D0D@0.7', 'borderw': '20'})
         )
     if fait_w:
         box_w, box_h = 600, 80
@@ -188,22 +186,16 @@ def incruster_texte_hierarchique(image_in: str, contexte: str, fait_choc: str, c
         box_y = y_fait - 10
         filtres.append(f"drawbox=x={box_x}:y={box_y}:w={box_w}:h={box_h}:color=0xFFFFFF@0.85:t=fill")
         filtres.append(
-            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-            f"text='{escape_text(fait_w)}':fontcolor=0x2D1B4E:fontsize={FAIT_CHOC_FONTSIZE}:"
-            f"x=(w-text_w)/2:y={y_fait}"
+            safe_drawtext(fait_w, FAIT_CHOC_FONTSIZE, "0x2D1B4E", "(w-text_w)/2", str(y_fait), bold=True)
         )
     if cons_w:
         filtres.append(
-            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
-            f"text='{escape_text(cons_w)}':fontcolor=0xFFFFFF:fontsize={CONSEQUENCE_FONTSIZE}:"
-            f"x=(w-text_w)/2:y={y_cons}:"
-            f"box=1:boxcolor=0x0D0D0D@0.7:boxborderw=20"
+            safe_drawtext(cons_w, CONSEQUENCE_FONTSIZE, "0xFFFFFF", "(w-text_w)/2", str(y_cons),
+                          box={'color': '0x0D0D0D@0.7', 'borderw': '20'})
         )
     if src_w:
         filtres.append(
-            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
-            f"text='{escape_text(src_w)}':fontcolor=0xCCCCCC:fontsize={SOURCE_FONTSIZE}:"
-            f"x={MARGIN}:y={y_src}"
+            safe_drawtext(src_w, SOURCE_FONTSIZE, "0xCCCCCC", str(MARGIN), str(y_src))
         )
 
     filtre_texte = scale_filter
