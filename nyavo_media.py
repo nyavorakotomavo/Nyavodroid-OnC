@@ -487,3 +487,152 @@ def get_image_from_pexels(query: str, chemin: str, size: tuple[int, int] | None 
         if download_pexels_image(photo, chemin, size):
             return True
     return False
+# ══════════════════════════════════════════════
+#  CROP vers un ratio cible
+# ══════════════════════════════════════════════
+def crop_to_ratio(input_path: str, output_path: str, target_size: tuple[int, int]) -> None:
+    w_target, h_target = target_size
+    filtre = (
+        f"scale={w_target}:{h_target}:force_original_aspect_ratio=increase,"
+        f"crop={w_target}:{h_target}"
+    )
+    try:
+        subprocess.run(
+            ["ffmpeg", "-i", input_path, "-vf", filtre, "-frames:v", "1", "-y", output_path],
+            check=True, capture_output=True, text=True,
+        )
+    except FileNotFoundError:
+        raise RuntimeError("ffmpeg absent.")
+
+
+def _check_img(chemin: str, expected_size: tuple[int, int] | None = None) -> None:
+    taille = os.path.getsize(chemin)
+    if taille < 1024:
+        raise ValueError(f"image suspecte ({taille} octets)")
+    if expected_size:
+        try:
+            cmd = [
+                "ffprobe", "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=width,height",
+                "-of", "csv=p=0", chemin
+            ]
+            out = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            w, h = out.stdout.strip().split(",")
+            w, h = int(w), int(h)
+            ratio_obtenu = w / h
+            ratio_attendu = expected_size[0] / expected_size[1]
+            if abs(ratio_obtenu - ratio_attendu) > 0.05:
+                print(f"    ⚠️ Ratio image {w}x{h} (attendu {expected_size[0]}x{expected_size[1]}), possible déformation.")
+        except Exception:
+            pass
+
+
+# ══════════════════════════════════════════════
+#  FALLBACK PRINCIPAL — avec choix IA vs Pexels
+# ══════════════════════════════════════════════
+def image_avec_fallback(prompt: str, gemini_key: str, chemin: str,
+                        size: tuple[int, int] | None = None,
+                        use_pexels: bool = False, pexels_query: str = "") -> None:
+    if size is None:
+        size = DEFAULT_IMG_SIZE
+
+    # Prompt strict sans texte
+    prompt = clean_text(prompt) + ", high quality, sharp focus, no stretching, no distortion, no text, no letters, no words, no typography"
+    erreurs = []
+    tentatives = 0
+
+    if use_pexels and pexels_query:
+        print(f"    🖼️ Pexels (recherche : {pexels_query})...")
+        if get_image_from_pexels(pexels_query, chemin, size):
+            _check_img(chemin, size)
+            print(f"    ✅ Image Pexels ({os.path.getsize(chemin):,} o)")
+            return
+        else:
+            print("    ⚠️ Pexels échoué, fallback IA.")
+
+    # 1. Gemini (cascade)
+    try:
+        tentatives += 1
+        print("    🖼️ Gemini image...")
+        _i_gemini(prompt, chemin, gemini_key, size)
+        _check_img(chemin, size)
+        print(f"    ✅ Image Gemini ({os.path.getsize(chemin):,} o)")
+        print(f"    📊 Fournisseur utilisé : Gemini après {tentatives} tentative(s)")
+        return
+    except Exception as e:
+        erreurs.append(f"Gemini={e}"); print(f"    ⚠️ Gemini image : {e}")
+
+    # 2. Cloudflare (remonté)
+    if CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN:
+        try:
+            tentatives += 1
+            print("    🖼️ Cloudflare image (carré → crop)...")
+            raw = chemin + ".raw.png"
+            _i_cloudflare(prompt, raw)
+            _check_img(raw)
+            crop_to_ratio(raw, chemin, target_size=size)
+            _check_img(chemin, size)
+            os.remove(raw)
+            print(f"    ✅ Image Cloudflare ({os.path.getsize(chemin):,} o)")
+            print(f"    📊 Fournisseur utilisé : Cloudflare après {tentatives} tentative(s)")
+            return
+        except Exception as e:
+            erreurs.append(f"Cloudflare={e}"); print(f"    ⚠️ Cloudflare : {e}")
+
+    # 3. Hugging Face
+    if HF_TOKEN:
+        try:
+            tentatives += 1
+            print("    🖼️ Hugging Face image...")
+            _i_hf(prompt, chemin, size)
+            _check_img(chemin, size)
+            print(f"    ✅ Image HF ({os.path.getsize(chemin):,} o)")
+            print(f"    📊 Fournisseur utilisé : Hugging Face après {tentatives} tentative(s)")
+            return
+        except Exception as e:
+            erreurs.append(f"HF={e}"); print(f"    ⚠️ HF image : {e}")
+
+    # 4. Together
+    if TOGETHER_API_KEY:
+        try:
+            tentatives += 1
+            print("    🖼️ Together image...")
+            _i_together(prompt, chemin, size)
+            _check_img(chemin, size)
+            print(f"    ✅ Image Together ({os.path.getsize(chemin):,} o)")
+            print(f"    📊 Fournisseur utilisé : Together après {tentatives} tentative(s)")
+            return
+        except Exception as e:
+            erreurs.append(f"Together={e}"); print(f"    ⚠️ Together : {e}")
+
+    # 5. Fal.ai
+    if FAL_API_KEY:
+        try:
+            tentatives += 1
+            print("    🖼️ Fal.ai image (carré → crop)...")
+            raw = chemin + ".raw.png"
+            _i_fal(prompt, raw)
+            _check_img(raw)
+            crop_to_ratio(raw, chemin, target_size=size)
+            _check_img(chemin, size)
+            os.remove(raw)
+            print(f"    ✅ Image Fal.ai ({os.path.getsize(chemin):,} o)")
+            print(f"    📊 Fournisseur utilisé : Fal.ai après {tentatives} tentative(s)")
+            return
+        except Exception as e:
+            erreurs.append(f"Fal.ai={e}"); print(f"    ⚠️ Fal.ai : {e}")
+
+    # 6. Pollinations
+    try:
+        tentatives += 1
+        print("    🖼️ Pollinations image (dernier recours)...")
+        _i_pollinations(prompt, chemin)
+        _check_img(chemin)
+        print(f"    ✅ Image Pollinations ({os.path.getsize(chemin):,} o)")
+        print(f"    📊 Fournisseur utilisé : Pollinations après {tentatives} tentative(s)")
+        return
+    except Exception as e:
+        erreurs.append(f"Pollinations={e}"); print(f"    ⚠️ Pollinations image : {e}")
+
+    raise RuntimeError("Image impossible (tous fournisseurs KO) :\n  " + "\n  ".join(erreurs))
