@@ -8,10 +8,11 @@ Alignée sur la ligne éditoriale officielle :
   Axe 4 : Coulisses des projets Nyavodroid (dev, défis, solutions)
 
 Identité visuelle : Infographie Narrative d'Expert.
-  Palette premium : violet profond (#2D1B4E), jaune moutarde (#E5B83B),
-  bleu nuit (#1A2A47), accents orange (#F4511E).
+  Palette premium : violet profond, jaune moutarde, bleu nuit, accents orange.
   Composition aérée, badge de sourcing, CTA visuel.
 """
+import os
+from PIL import ImageFont
 
 # ──────────────────────────────────────────────
 # Les 4 axes éditoriaux officiels
@@ -29,7 +30,7 @@ PILLARS = {
             "serveur", "navigateur", "open source", "framework",
             "base de données", "compilateur", "Linux", "Python",
         ],
-        "categorie": "tech",  # pour décider IA vs Pexels
+        "categorie": "tech",
     },
     "science_tech": {
         "label": "Découvertes Scientifiques & Technologies Émergentes",
@@ -78,7 +79,6 @@ PILLARS = {
 
 PILLAR_KEYS = list(PILLARS.keys())
 
-# Poids de sélection (somme libre)
 PILLAR_WEIGHTS = {
     "secrets_code": 30,
     "science_tech": 25,
@@ -177,22 +177,18 @@ STORY_PROMPTS = [
 ]
 
 # ──────────────────────────────────────────────
-# Ton éditorial
-# ──────────────────────────────────────────────
-# ──────────────────────────────────────────────
 # Ton éditorial (français impératif, formule Cultination)
 # ──────────────────────────────────────────────
 TON_EDITORIAL = (
     "Rédige UNIQUEMENT en français. "
     "Sois extrêmement concis : maximum 3 phrases. "
     "Structure : [contexte général] → [FAIT CHOC avec un chiffre précis] → [conséquence concrète]. "
-    "Jamais d’abstraction, jamais de comparaison vague. "
+    "Jamais d'abstraction, jamais de comparaison vague. "
     "Le fait choc doit être surprenant et vérifiable."
 )
 
-
 # ──────────────────────────────────────────────
-# Identité visuelle — NOUVEAU STYLE "INFOGRAPHIE NARRATIVE D'EXPERT"
+# Identité visuelle — Style "INFOGRAPHIE NARRATIVE D'EXPERT"
 # ──────────────────────────────────────────────
 STYLE_IMAGE_SUFFIX = (
     "premium editorial infographic style, expert narrative design, "
@@ -205,33 +201,113 @@ STYLE_IMAGE_SUFFIX = (
 )
 
 # ──────────────────────────────────────────────
+# Palette de couleurs — tuples RGB(A) pour Pillow
+# ──────────────────────────────────────────────
+COLORS = {
+    "violet_profond":    (45, 27, 78),
+    "bleu_nuit":         (26, 42, 71),
+    "jaune_moutarde":    (229, 184, 59),
+    "orange_accent":     (244, 81, 30),
+    "blanc":             (255, 255, 255),
+    "gris_clair":        (204, 204, 204),
+    "gris_sombre":       (100, 100, 100),
+    "noir":              (13, 13, 13),
+}
+
+# Couleurs d'arrière-plan (avec alpha) pour boîtes semi-transparentes
+BOX_BG = {
+    "noir_translucide":  (13, 13, 13, 180),
+    "blanc_opaque":      (255, 255, 255, 230),
+}
+
+# ──────────────────────────────────────────────
 # Palette pour les fonds générés (posts texte seul)
 # ──────────────────────────────────────────────
 BACKGROUND_GRADIENT = [
-    "#2D1B4E",  # violet profond (prioritaire)
-    "#3D2B5E",  # violet moyen
-    "#1A2A47",  # bleu nuit
-    "#E5B83B",  # jaune moutarde
-    "#F4511E",  # orange
-    "#8B1A4A",  # rouge foncé
+    "#2D1B4E",
+    "#3D2B5E",
+    "#1A2A47",
+    "#E5B83B",
+    "#F4511E",
+    "#8B1A4A",
 ]
 
-CANVAS_SIZE_TEXTE_SEUL = (1080, 1080)  # format carré pour les posts texte
+CANVAS_SIZE_TEXTE_SEUL = (1080, 1080)
+CANVAS_MARGIN_TEXTE_SEUL = 90
 
 # ──────────────────────────────────────────────
-# Hiérarchie de texte pour les visuels
+# Polices premium — OFL, embarquées dans assets/fonts/
+# (Inter ou Montserrat : choix final à poser dans le dossier)
 # ──────────────────────────────────────────────
+FONT_DIR = "assets/fonts"
+FONT_REGULAR_PATH = os.path.join(FONT_DIR, "Inter-Regular.ttf")
+FONT_BOLD_PATH = os.path.join(FONT_DIR, "Inter-Bold.ttf")
+
+def get_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
+    """Retourne la police premium demandée, fallback DejaVu si manquante."""
+    path = FONT_BOLD_PATH if bold else FONT_REGULAR_PATH
+    try:
+        return ImageFont.truetype(path, size)
+    except OSError:
+        try:
+            fallback = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+            return ImageFont.truetype(fallback, size)
+        except OSError:
+            return ImageFont.load_default()
+
 # ──────────────────────────────────────────────
-# Tailles de police pour la nouvelle hiérarchie visuelle
+# Hiérarchie visuelle — tailles de police (px)
 # ──────────────────────────────────────────────
-ACCROCHE_FONTSIZE = 44          # phrase de contexte en haut
-FAIT_CHOC_FONTSIZE = 58         # chiffre / fait marquant (dans l'encadré)
-CONSEQUENCE_FONTSIZE = 28       # conséquence en dessous
-SOURCE_FONTSIZE = 22            # source en bas
+ACCROCHE_FONTSIZE = 44
+FAIT_CHOC_FONTSIZE = 58
+CONSEQUENCE_FONTSIZE = 28
+SOURCE_FONTSIZE = 22
+DETAIL_FONTSIZE = 36
+
 MARGIN = 54
+BOX_BORDER = 24
+LINE_SPACING = 14
+
+# ──────────────────────────────────────────────
+# Dimensions cibles
+# ──────────────────────────────────────────────
+POST_WIDTH, POST_HEIGHT = 1080, 1350
+STORY_WIDTH, STORY_HEIGHT = 1080, 1920
+MAX_TEXT_WIDTH_POST = POST_WIDTH - 2 * MARGIN
+MAX_TEXT_WIDTH_STORY = STORY_WIDTH - 2 * MARGIN
+
 # ──────────────────────────────────────────────
 # Dossiers des assets
 # ──────────────────────────────────────────────
 EXPRESSIONS_DIR = "assets/expressions"
 PROFILE_IMAGE_PATH = "assets/profile.png"
 EMOJIS_DIR = "assets/emojis"
+
+# ──────────────────────────────────────────────
+# Wrap texte mesuré au pixel (Pillow)
+# ──────────────────────────────────────────────
+def wrap_text_pillow(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:
+    """Découpe un texte en lignes en mesurant la largeur réelle de chaque mot."""
+    if not text:
+        return []
+    words = text.split()
+    lines: list[str] = []
+    current: list[str] = []
+    current_width = 0
+
+    for word in words:
+        word_width = font.getbbox(word)[2]
+        space_width = font.getbbox(" ")[2] if current else 0
+        new_width = current_width + space_width + word_width
+        if new_width <= max_width:
+            current.append(word)
+            current_width = new_width
+        else:
+            if current:
+                lines.append(" ".join(current))
+            current = [word]
+            current_width = word_width
+
+    if current:
+        lines.append(" ".join(current))
+    return lines
