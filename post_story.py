@@ -31,7 +31,6 @@ def generer_texte_story():
     pilier = random.choices(PILLAR_KEYS, weights=[PILLAR_WEIGHTS[k] for k in PILLAR_KEYS], k=1)[0]
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
 
-    # Prompt modifié pour le style Cultination + surlignage
     prompt = (
         "Tu es Nyavodroid. Rédige UNIQUEMENT en français.\n"
         "Raconte une anecdote fascinante sur le sujet en 2 phrases maximum.\n"
@@ -41,25 +40,20 @@ def generer_texte_story():
         '  "source": "Source courte (ex: National Geographic)"\n}\n\n'
         f"Sujet : {sujet}. {TON_EDITORIAL}"
     )
-    
+
     print(f"  📝 Génération texte Cultination...\n     Sujet : {sujet}")
     brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, "[story]")
     brut = brut.strip()
     if brut.startswith("```json"): brut = brut[7:]
     if brut.endswith("```"): brut = brut[:-3]
-    
+
     try:
         data = json.loads(brut)
         texte_complet = data.get("texte", "")
         source = data.get("source", "")
-        
-        # On parse le texte pour remplir les champs attendus par la fonction d'incrustation
-        # On met tout dans 'fait_choc' car notre nouvelle fonction fusionne tout, 
-        # mais on garde la structure pour la compatibilité
         contexte = ""
         fait_choc = texte_complet 
         consequence = ""
-        
     except Exception:
         print("  ⚠️ JSON invalide, fallback.")
         contexte = brut
@@ -69,38 +63,15 @@ def generer_texte_story():
 
     return pilier, sujet, contexte, fait_choc, consequence, source
 
-def generer_image_story(pilier: str, sujet: str, chemin: str) -> None:
-    """Décision dynamique : Pexels pour le réel, IA pour l'abstrait."""
-    categorie = PILLARS[pilier].get("categorie", "tech")
-    use_pexels = (categorie in ["tech", "science"]) 
 
-    if use_pexels:
-        print(f"  🖼️  Recherche photo réelle sur Pexels : {sujet}")
-        success = M.get_image_from_pexels(sujet, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
-        
-        if not success:
-            print(f"  🖼️  Fallback IA sécurisé pour : {sujet}")
-            prompt_img = (
-                f"Professional documentary photography of {sujet}, photorealistic, 8k, sharp focus. "
-                f"NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS, NO TYPOGRAPHY."
-            )
-            M.image_avec_fallback(prompt_img, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
-    else:
-        # Pour les piliers abstraits (ex: coulisses), on va direct en IA créative
-        print(f"  ️  Génération IA conceptuelle pour : {sujet}")
-        prompt_img = (
-            f"Abstract conceptual art representing {sujet}, premium editorial style, "
-            f"deep violet and midnight blue tones, clean composition. "
-            f"ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS."
-        )
-        M.image_avec_fallback(prompt_img, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
-
- ══════════════════════════════════════════════
+# ══════════════════════════════════════════════
 #  GÉNÉRATION IMAGE — PEXELS PRIORITAIRE + FALLBACK IA SÉCURISÉ
 # ══════════════════════════════════════════════
 def generer_image_story(pilier: str, sujet: str, chemin: str) -> None:
+    """Décision dynamique : Pexels pour le réel, IA pour l'abstrait."""
     categorie = PILLARS[pilier].get("categorie", "tech")
     use_pexels = (categorie in ["tech", "science"])
+
     if use_pexels:
         print(f"  🖼️  [Pexels] Recherche : '{sujet}'")
         success = M.get_image_from_pexels(sujet, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
@@ -119,6 +90,7 @@ def generer_image_story(pilier: str, sujet: str, chemin: str) -> None:
         prompt_img = f"Abstract conceptual art representing {sujet}, premium editorial style, deep violet and midnight blue tones. NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS."
         M.image_avec_fallback(prompt_img, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
 
+
 # ══════════════════════════════════════════════
 #  INCRUSTATION TEXTE PILLOW + WATERMARK
 # ══════════════════════════════════════════════
@@ -126,7 +98,6 @@ def incruster_texte_hierarchique(image_in, contexte, fait_choc, consequence, sou
     """Incrustation hiérarchique Pillow (story 1080x1920), puis watermark profil+expression."""
     M.incruster_texte_pillow(image_in, contexte, fait_choc, consequence, source,
                              image_out, target_size=(STORY_WIDTH, STORY_HEIGHT))
-    # Watermark profil + expression uniquement (la source est déjà rendue par Pillow)
     M.overlay_watermark(image_out, image_out, source_text="")
 
 
