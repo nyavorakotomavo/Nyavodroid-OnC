@@ -173,7 +173,7 @@ def _get_emoji_path(emoji_char: str) -> str | None:
 
 
 def incruster_texte_hierarchique_post(image_in: str, contexte: str, fait_choc: str, consequence: str, source: str, image_out: str) -> None:
-    # 1. Scale/crop 4:5 (comme avant)
+    # 1. Scale/crop 4:5
     try:
         cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
                "-show_entries", "stream=width,height", "-of", "csv=p=0", image_in]
@@ -196,7 +196,6 @@ def incruster_texte_hierarchique_post(image_in: str, contexte: str, fait_choc: s
     except:
         scale_filter = f"scale={POST_WIDTH}:{POST_HEIGHT},format=rgba"
 
-    # Nettoyage
     contexte = clean_backslash(M.clean_text(contexte))
     fait_choc = clean_backslash(M.clean_text(fait_choc))
     consequence = clean_backslash(M.clean_text(consequence))
@@ -210,7 +209,7 @@ def incruster_texte_hierarchique_post(image_in: str, contexte: str, fait_choc: s
 
     # Positions (canvas 1080x1350)
     y_ctx = MARGIN
-    y_fait = 180          # laisse de la place pour le contexte
+    y_fait = 180
     y_cons = y_fait + 90 + 15
     y_src = POST_HEIGHT - MARGIN - 30
 
@@ -219,15 +218,15 @@ def incruster_texte_hierarchique_post(image_in: str, contexte: str, fait_choc: s
         filtres.append(
             f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
             f"text='{escape_text(ctx_w)}':fontcolor=0xFFFFFF:fontsize={ACCROCHE_FONTSIZE}:"
-            f"x=(w-text_w)/2:y={y_ctx}:shadowcolor=0x000000@0.3:shadowx=1:shadowy=2"
+            f"x=(w-text_w)/2:y={y_ctx}:"
+            f"box=1:boxcolor=0x0D0D0D@0.7:boxborderw=20:"
+            f"shadowcolor=0x000000@0.3:shadowx=1:shadowy=2"
         )
     if fait_w:
         box_w, box_h = 600, 80
         box_x = (POST_WIDTH - box_w)//2
         box_y = y_fait - 10
-        filtres.append(
-            f"drawbox=x={box_x}:y={box_y}:w={box_w}:h={box_h}:color=0xFFFFFF@0.85:t=fill"
-        )
+        filtres.append(f"drawbox=x={box_x}:y={box_y}:w={box_w}:h={box_h}:color=0xFFFFFF@0.85:t=fill")
         filtres.append(
             f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
             f"text='{escape_text(fait_w)}':fontcolor=0x2D1B4E:fontsize={FAIT_CHOC_FONTSIZE}:"
@@ -237,7 +236,8 @@ def incruster_texte_hierarchique_post(image_in: str, contexte: str, fait_choc: s
         filtres.append(
             f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
             f"text='{escape_text(cons_w)}':fontcolor=0xFFFFFF:fontsize={CONSEQUENCE_FONTSIZE}:"
-            f"x=(w-text_w)/2:y={y_cons}"
+            f"x=(w-text_w)/2:y={y_cons}:"
+            f"box=1:boxcolor=0x0D0D0D@0.7:boxborderw=20"
         )
     if src_w:
         filtres.append(
