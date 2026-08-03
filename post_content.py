@@ -172,24 +172,29 @@ def publier_image_texte(pilier: str) -> dict:
     consequence = M.clean_text(consequence)
     source = M.clean_text(source)
 
-    # ----- Choix de la source d'image -----
-    use_pexels = (categorie != "tech")
-    if use_pexels:
-        pexels_query = sujet
-        prompt_img = ""
-    else:
-        prompt_img = (
-            f"Illustration verticale 4:5 pour le sujet : {sujet}\n"
-            f"Axe : {label}\nStyle : {STYLE_IMAGE_SUFFIX}"
-        )
-        pexels_query = ""
+   # ----- Image : Décision Pexels vs IA selon pilier -----
+    categorie = PILLARS[pilier].get("categorie", "tech")
+    use_pexels = (categorie in ["tech", "science"]) 
 
-    print(f"  🖼️  Source image : {'Pexels' if use_pexels else 'IA'}...")
-    M.image_avec_fallback(
-        prompt_img, GEMINI_API_KEY, IMAGE_PATH,
-        size=(POST_WIDTH, POST_HEIGHT),
-        use_pexels=use_pexels, pexels_query=pexels_query
-    )
+    if use_pexels:
+        print(f"  🖼️  Recherche photo réelle sur Pexels : {sujet}")
+        success = M.get_image_from_pexels(sujet, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT))
+        
+        if not success:
+            print(f"  🖼️  Fallback IA sécurisé pour : {sujet}")
+            prompt_img = (
+                f"Professional documentary photography of {sujet}, photorealistic, 8k, sharp focus. "
+                f"NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS, NO TYPOGRAPHY."
+            )
+            M.image_avec_fallback(prompt_img, GEMINI_API_KEY, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT))
+    else:
+        print(f"  ️  Génération IA conceptuelle pour : {sujet}")
+        prompt_img = (
+            f"Abstract conceptual art representing {sujet}, premium editorial style, "
+            f"deep violet and midnight blue tones, clean composition. "
+            f"ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS."
+        )
+        M.image_avec_fallback(prompt_img, GEMINI_API_KEY, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT))
 
     # ----- Incrustation du texte hiérarchique + watermark -----
     if contexte or fait_choc or consequence:
