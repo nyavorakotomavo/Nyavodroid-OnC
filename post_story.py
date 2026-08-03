@@ -132,8 +132,7 @@ def generer_image_story(pilier: str, sujet: str, chemin: str) -> None:
 #  INCRUSTATION DE TEXTE DYNAMIQUE + EMOJI IMAGE + WATERMARK DOUBLE
 # ══════════════════════════════════════════════
 def incruster_texte_hierarchique(image_in: str, contexte: str, fait_choc: str, consequence: str, source: str, image_out: str) -> None:
-    """Incruste le texte en mode Cultination : contexte discret, fait choc encadré, conséquence, source."""
-    # 1. Scale/crop 9:16 (inchangé)
+    # 1. Scale/crop 9:16
     try:
         cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
                "-show_entries", "stream=width,height", "-of", "csv=p=0", image_in]
@@ -156,62 +155,56 @@ def incruster_texte_hierarchique(image_in: str, contexte: str, fait_choc: str, c
     except:
         scale_filter = f"scale={STORY_WIDTH}:{STORY_HEIGHT},format=rgba"
 
-    # 2. Nettoyage des textes
+    # 2. Nettoyage
     contexte = clean_backslash(M.clean_text(contexte))
     fait_choc = clean_backslash(M.clean_text(fait_choc))
     consequence = clean_backslash(M.clean_text(consequence))
     source = clean_backslash(M.clean_text(source))
 
-    # Wrapping
-    def wrap(text, max_chars): return wrap_text(text, max_chars) if text else ""
-    contexte_w = wrap(contexte, 30)
+    def wrap(t, max_chars): return wrap_text(t, max_chars) if t else ""
+    ctx_w = wrap(contexte, 30)
     fait_w = wrap(fait_choc, 22)
-    consequence_w = wrap(consequence, 35)
-    source_w = wrap(source, 45)
+    cons_w = wrap(consequence, 35)
+    src_w = wrap(source, 45)
 
-    # 3. Positions verticales fixes (calcul simplifié)
-    y_contexte = MARGIN
-    y_fait = y_contexte + 80 + 20   # laisse la place pour le contexte
-    y_consequence = y_fait + 80 + 20
-    y_source = STORY_HEIGHT - MARGIN - 30
+    # Positions verticales fixes
+    y_ctx = MARGIN
+    y_fait = y_ctx + 80 + 20
+    y_cons = y_fait + 90 + 20
+    y_src = STORY_HEIGHT - MARGIN - 30
 
     filtres = []
-    # Contexte (petit, blanc, ombre légère)
-    if contexte_w:
+    if ctx_w:
         filtres.append(
             f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
-            f"text='{escape_text(contexte_w)}':fontcolor=0xFFFFFF:fontsize={ACCROCHE_FONTSIZE}:"
-            f"x=(w-text_w)/2:y={y_contexte}:shadowcolor=0x000000@0.3:shadowx=1:shadowy=2"
+            f"text='{escape_text(ctx_w)}':fontcolor=0xFFFFFF:fontsize={ACCROCHE_FONTSIZE}:"
+            f"x=(w-text_w)/2:y={y_ctx}:"
+            f"box=1:boxcolor=0x0D0D0D@0.7:boxborderw=20:"
+            f"shadowcolor=0x000000@0.3:shadowx=1:shadowy=2"
         )
-    # Fait choc (encadré blanc, texte violet foncé)
     if fait_w:
-        # On crée un fond blanc semi-transparent derrière le texte
-        # On utilise drawbox pour le fond, puis drawtext par-dessus
-        box_w = 600  # largeur fixe de l'encadré
-        box_h = 80
-        box_x = (STORY_WIDTH - box_w) // 2
+        # Encadré blanc fort
+        box_w, box_h = 600, 80
+        box_x = (STORY_WIDTH - box_w)//2
         box_y = y_fait - 10
-        filtres.append(
-            f"drawbox=x={box_x}:y={box_y}:w={box_w}:h={box_h}:color=0xFFFFFF@0.85:t=fill"
-        )
+        filtres.append(f"drawbox=x={box_x}:y={box_y}:w={box_w}:h={box_h}:color=0xFFFFFF@0.85:t=fill")
         filtres.append(
             f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
             f"text='{escape_text(fait_w)}':fontcolor=0x2D1B4E:fontsize={FAIT_CHOC_FONTSIZE}:"
             f"x=(w-text_w)/2:y={y_fait}"
         )
-    # Conséquence (blanc, plus petit)
-    if consequence_w:
+    if cons_w:
         filtres.append(
             f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
-            f"text='{escape_text(consequence_w)}':fontcolor=0xFFFFFF:fontsize={CONSEQUENCE_FONTSIZE}:"
-            f"x=(w-text_w)/2:y={y_consequence}"
+            f"text='{escape_text(cons_w)}':fontcolor=0xFFFFFF:fontsize={CONSEQUENCE_FONTSIZE}:"
+            f"x=(w-text_w)/2:y={y_cons}:"
+            f"box=1:boxcolor=0x0D0D0D@0.7:boxborderw=20"
         )
-    # Source (gris clair, en bas à gauche)
-    if source_w:
+    if src_w:
         filtres.append(
             f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
-            f"text='{escape_text(source_w)}':fontcolor=0xCCCCCC:fontsize={SOURCE_FONTSIZE}:"
-            f"x={MARGIN}:y={y_source}"
+            f"text='{escape_text(src_w)}':fontcolor=0xCCCCCC:fontsize={SOURCE_FONTSIZE}:"
+            f"x={MARGIN}:y={y_src}"
         )
 
     filtre_texte = scale_filter
@@ -227,8 +220,7 @@ def incruster_texte_hierarchique(image_in: str, contexte: str, fait_choc: str, c
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ffmpeg texte story échec : {e.stderr[:500]}")
 
-    # 4. Watermark (profil + expression) – on appelle la nouvelle version
-    M.overlay_watermark(temp_text, image_out)
+    M.overlay_watermark(temp_text, image_out, source_text=source)
     if os.path.exists(temp_text):
         os.remove(temp_text)
 
