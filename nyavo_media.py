@@ -706,98 +706,72 @@ def audio_avec_fallback(prompt: str, chemin: str) -> bool:
 # ══════════════════════════════════════════════
 #  WATERMARK DOUBLE (expression + photo profil)
 # ══════════════════════════════════════════════
-def overlay_watermark(image_in: str, image_out: str) -> None:
+def overlay_watermark(image_in: str, image_out: str, source_text: str = "") -> None:
     """
     Superpose :
-    - Expression aléatoire en bas-droite
-    - Photo de profil (assets/profile.png) en bas-gauche
+    - Profil en haut à droite (fixe)
+    - Expression aléatoire en bas à droite
+    - Source en bas à gauche (si source_text non vide)
     """
-    expressions_dir = "assets/expressions"
     profile_path = "assets/profile.png"
+    expressions_dir = "assets/expressions"
     temp = image_out + ".tmp.png"
-
-    # Préparer les entrées : image principale + expression + profile
     inputs = ["-i", image_in]
+    filter_parts = []
+    stream_idx = 0
+    main_stream = f"[{stream_idx}:v]"
+    stream_idx += 1
 
-    # Expression
-    emo_path = None
+    # Profil en haut à droite
+    if os.path.isfile(profile_path):
+        inputs += ["-i", profile_path]
+        filter_parts.append(f"[{stream_idx}:v]scale=80:-1,format=rgba[pfp]")
+        margin = 40
+        filter_parts.append(f"{main_stream}[pfp]overlay=main_w-80-{margin}:{margin}[tmp1]")
+        main_stream = "[tmp1]"
+        stream_idx += 1
+
+    # Expression en bas à droite
     if os.path.isdir(expressions_dir):
         emos = [f for f in os.listdir(expressions_dir) if f.lower().endswith('.png')]
         if emos:
             chosen = random.choice(emos)
             emo_path = os.path.join(expressions_dir, chosen)
-            print(f"    🎭 Watermark expression : {chosen}")
             inputs += ["-i", emo_path]
-        else:
-            print("    ⚠️ Aucune expression trouvée.")
-    else:
-        print("    ⚠️ Dossier expressions introuvable.")
+            try:
+                cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                       "-show_entries", "stream=width,height", "-of", "csv=p=0", emo_path]
+                out = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                w_emo, h_emo = map(int, out.stdout.strip().split(','))
+            except:
+                w_emo, h_emo = 100, 100
+            max_dim = 130
+            if w_emo > h_emo:
+                new_w = max_dim
+                new_h = int(h_emo * max_dim / w_emo)
+            else:
+                new_h = max_dim
+                new_w = int(w_emo * max_dim / h_emo)
+            margin = 40
+            filter_parts.append(f"[{stream_idx}:v]scale={new_w}:{new_h},format=rgba[emo]")
+            filter_parts.append(f"{main_stream}[emo]overlay=main_w-{new_w}-{margin}:main_h-{new_h}-{margin}[tmp2]")
+            main_stream = "[tmp2]"
+            stream_idx += 1
 
-    # Profile
-    use_profile = os.path.isfile(profile_path)
-    if use_profile:
-        inputs += ["-i", profile_path]
+    # Source en bas à gauche (si présente)
+    if source_text:
+        # Nettoyage pour drawtext (guillemets simples échappés)
+        src_clean = source_text.replace("'", "'\\\\''")
+        src_y = "main_h-40"
+        filter_parts.append(
+            f"{main_stream}drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
+            f"text='{src_clean}':fontcolor=0xCCCCCC:fontsize=22:x=40:y={src_y}[tmp3]"
+        )
+        main_stream = "[tmp3]"
 
-    if not emo_path and not use_profile:
-        # Rien à superposer, copie simple
-        subprocess.run(["cp", image_in, image_out], check=True)
-        return
-
-    # Construction du filter_complex
-    parts = []
-    idx = 0
-    main = f"[{idx}:v]"
-    idx += 1
-
-    # Si expression présente
-    if emo_path:
-        # Redimensionnement adaptatif
-        try:
-            cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
-                   "-show_entries", "stream=width,height", "-of", "csv=p=0", emo_path]
-            out = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            w_emo, h_emo = map(int, out.stdout.strip().split(','))
-        except:
-            w_emo, h_emo = 100, 100
-        max_dim = 130
-        if w_emo > h_emo:
-            new_w = max_dim
-            new_h = int(h_emo * max_dim / w_emo)
-        else:
-            new_h = max_dim
-            new_w = int(w_emo * max_dim / h_emo)
-        margin = 40
-        parts.append(f"[{idx}:v]scale={new_w}:{new_h},format=rgba[emo]")
-        parts.append(f"{main}[emo]overlay=main_w-{new_w}-{margin}:main_h-{new_h}-{margin}[tmp1]")
-        main = "[tmp1]"
-        idx += 1
-
-    # Si profile
-    if use_profile:
-        try:
-            cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
-                   "-show_entries", "stream=width,height", "-of", "csv=p=0", profile_path]
-            out = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            w_pr, h_pr = map(int, out.stdout.strip().split(','))
-        except:
-            w_pr, h_pr = 100, 100
-        max_dim = 100
-        if w_pr > h_pr:
-            new_w = max_dim
-            new_h = int(h_pr * max_dim / w_pr)
-        else:
-            new_h = max_dim
-            new_w = int(w_pr * max_dim / h_pr)
-        margin = 40
-        parts.append(f"[{idx}:v]scale={new_w}:{new_h},format=rgba[pfp]")
-        parts.append(f"{main}[pfp]overlay={margin}:main_h-{new_h}-{margin}[out]")
-        main = "[out]"
-        idx += 1
-    else:
-        # Rien d'autre, on renomme le flux final
-        parts.append(f"{main}null[out]")
-
-    filter_complex = ";".join(parts)
+    # Finalisation
+    filter_parts.append(f"{main_stream}null[out]")
+    filter_complex = ";".join(filter_parts)
 
     try:
         subprocess.run(
@@ -808,8 +782,6 @@ def overlay_watermark(image_in: str, image_out: str) -> None:
         os.replace(temp, image_out)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ffmpeg watermark échec : {e.stderr[:500]}")
-
-
 # ══════════════════════════════════════════════
 #  FOND PILLOW POUR POST TEXTE SEUL
 # ══════════════════════════════════════════════
