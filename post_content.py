@@ -274,6 +274,101 @@ def incruster_texte_hierarchique_post(image_in: str, contexte: str, fait_choc: s
     M.overlay_watermark(temp_text, image_out, source_text=source)
     if os.path.exists(temp_text):
         os.remove(temp_text)
+def publier_image_texte(pilier: str) -> dict:
+    label = PILLARS[pilier]["label"]
+    sujet = random.choice(SUJETS_PAR_PILIER[pilier])
+    categorie = PILLARS[pilier].get("categorie", "tech")
+
+    # ----- Génération du contenu structuré (JSON) -----
+    prompt = (
+        "Tu es Nyavodroid. Rédige UNIQUEMENT en français et en JSON :\n"
+        '{\n  "contexte": "1 phrase de contexte général",\n'
+        '  "fait_choc": "le chiffre ou fait surprenant (max 8 mots)",\n'
+        '  "consequence": "1 phrase de conséquence concrète",\n'
+        '  "source": "source vérifiable (ex: Nature, 2026)",\n'
+        '  "legende": "légende Facebook en 2-3 lignes (sans hashtags)"\n}\n\n'
+        f"Sujet imposé : {sujet}. {TON_EDITORIAL}"
+    )
+    print(f"  📝 Génération contenu post image...\n     Axe : {label}\n     Sujet : {sujet}")
+    brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, "(post json)")
+    brut = brut.strip()
+    if brut.startswith("```json"):
+        brut = brut[7:]
+    if brut.endswith("```"):
+        brut = brut[:-3]
+
+    try:
+        data = json.loads(brut)
+        contexte = data.get("contexte", "")
+        fait_choc = data.get("fait_choc", "")
+        consequence = data.get("consequence", "")
+        source = data.get("source", "")
+        legende = data.get("legende", "")
+    except Exception:
+        print("  ⚠️ JSON invalide, fallback légende simple.")
+        contexte = brut
+        fait_choc = ""
+        consequence = ""
+        source = ""
+        legende = brut
+
+    # Nettoyage
+    contexte = M.clean_text(contexte)
+    fait_choc = M.clean_text(fait_choc)
+    consequence = M.clean_text(consequence)
+    source = M.clean_text(source)
+
+    # ----- Choix de la source d'image -----
+    use_pexels = (categorie != "tech")
+    if use_pexels:
+        pexels_query = sujet
+        prompt_img = ""
+    else:
+        prompt_img = (
+            f"Illustration verticale 4:5 pour le sujet : {sujet}\n"
+            f"Axe : {label}\nStyle : {STYLE_IMAGE_SUFFIX}"
+        )
+        pexels_query = ""
+
+    print(f"  🖼️  Source image : {'Pexels' if use_pexels else 'IA'}...")
+    M.image_avec_fallback(
+        prompt_img, GEMINI_API_KEY, IMAGE_PATH,
+        size=(POST_WIDTH, POST_HEIGHT),
+        use_pexels=use_pexels, pexels_query=pexels_query
+    )
+
+    # ----- Incrustation du texte hiérarchique + watermark -----
+    if contexte or fait_choc or consequence:
+        print("  🎨 Incrustation texte + watermark double...")
+        incruster_texte_hierarchique_post(IMAGE_PATH, contexte, fait_choc, consequence, source, IMAGE_PATH)
+    else:
+        M.overlay_watermark(IMAGE_PATH, IMAGE_PATH, source_text="")
+
+    # ----- Assemblage de la légende finale -----
+    legende_finale = f"{contexte}\n\n{fait_choc}\n\n{consequence}"
+    if source:
+        legende_finale += f"\n\nSource : {source}"
+    legende_finale += "\n\n#Nyavodroid"
+
+    print(f"\n📌 Axe : {label}\n📌 Sujet : {sujet}\n📌 Légende :\n{legende_finale}\n")
+
+    # ----- Publication -----
+    ep = f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/photos"
+    try:
+        with open(IMAGE_PATH, "rb") as f:
+            r = M._req("POST", ep,
+                       data={"caption": legende_finale, "access_token": M.FB_PAGE_ACCESS_TOKEN},
+                       files={"source": (os.path.basename(IMAGE_PATH), f, "image/png")},
+                       timeout=M.TIMEOUT)
+        res = r.json()
+        if "id" not in res:
+            raise ValueError(f"Réponse FB inattendue : {res}")
+        print(f"  ✅ Image+Texte publié — ID : {res['id']}")
+        return res
+    except requests.exceptions.HTTPError as e:
+        raise M.fb_error(e, "photo + légende") from e
+    except OSError as e:
+        raise RuntimeError(f"Fichier image illisible : {e}") from e
 
 # ══════════════════════════════════════════════
 #  FIN DE LA PARTIE 1 — LA PARTIE 2 CONTIENT LE FORMAT REEL ET LE MAIN
