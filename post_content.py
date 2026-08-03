@@ -48,7 +48,18 @@ STRUCTURE_REEL = [
      "consigne_image": "Plan final épique, ambiance lumineuse et mémorable, le sujet révélé dans toute sa puissance, effet dramatique, lumière néon intense"},
 ]
 
-
+def safe_drawtext(text, fontsize, color, x, y, box=None, font="DejaVuSans.ttf", bold=False):
+    """Construit un filtre drawtext en protégeant les caractères spéciaux."""
+    fontpath = f"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else f"/usr/share/fonts/truetype/dejavu/{font}"
+    # Échapper les deux-points et backslashes pour ffmpeg
+    t = text.replace('\\', '\\\\').replace(':', '\\:')
+    # Guillemets simples : on entoure le texte par des guillemets doubles dans le filtre
+    # Pour cela, on échappe les guillemets doubles éventuels dans le texte
+    t = t.replace('"', '\\"')
+    base = f"drawtext=fontfile={fontpath}:text=\"{t}\":fontcolor={color}:fontsize={fontsize}:x={x}:y={y}"
+    if box:
+        base += f":box=1:boxcolor={box['color']}:boxborderw={box['borderw']}"
+    return base
 # ══════════════════════════════════════════════
 #  UTILITAIRES
 # ══════════════════════════════════════════════
