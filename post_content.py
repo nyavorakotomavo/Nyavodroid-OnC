@@ -132,15 +132,27 @@ def publier_image_texte(pilier: str) -> dict:
     label = PILLARS[pilier]["label"]
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
 
-    prompt = (
-        "Tu es Nyavodroid. Rédige UNIQUEMENT en français et en JSON :\n"
-        '{"contexte": "1 phrase de contexte (10-15 mots)", '
+   prompt = (
+        "Tu es Nyavodroid, expert fact-checker. Contenu 100% vérifié obligatoire.\n\n"
+        "ÉTAPE 1 — Génère contexte + fait_choc + conséquence + description.\n"
+        "ÉTAPE 2 — Auto-vérification (3 questions) :\n"
+        "  Q1: Source réelle et accessible ?\n"
+        "  Q2: Chiffres/années cohérents avec la réalité ?\n"
+        "  Q3: image_prompt techniquement exact ? (NoSQL≠JSON, HTTP/3≠TCP, CDN≠serveur unique)\n"
+        "ÉTAPE 3 — Corrige si nécessaire avant de répondre.\n\n"
+        "RÈGLES :\n"
+        "- Jamais de chiffre inventé. Année ≤ 2025.\n"
+        "- Source obligatoire : organisme réel + année ≤ 2025.\n"
+        "- image_prompt EN ANGLAIS : scène techniquement exacte, sans texte.\n"
+        "- Si non vérifiable : {\"erreur\": \"fait non vérifiable\"}.\n\n"
+        "Réponds EXACTEMENT en JSON :\n"
+        '{"contexte": "1 phrase (10-15 mots)", '
         '"fait_choc": "fait/chiffre surprenant (max 8 mots, mots clés entre **)", '
-        '"consequence": "1 phrase courte de conséquence (10-15 mots)", '
-        '"description": "2 phrases qui développent l explication et la conséquence concrète (30-40 mots)", '
-        '"visuel": "concret si référent physique photographiable, sinon conceptuel", '
-        '"image_prompt": "EN ANGLAIS, scène visuelle concrète liée aux mots-clés, sans texte", '
-        '"source": "organisme réel + année 2024 ou avant"}\n'
+        '"consequence": "1 phrase courte (10-15 mots)", '
+        '"description": "2 phrases développées (30-40 mots)", '
+        '"visuel": "concret ou conceptuel", '
+        '"image_prompt": "EN ANGLAIS, scène techniquement exacte, sans texte", '
+        '"source": "organisme réel + année ≤ 2024"}\n\n'
         f"Sujet imposé : {sujet}."
     )
     print(f"  📝 Génération post image...\n     Sujet : {sujet}")
@@ -154,6 +166,17 @@ def publier_image_texte(pilier: str) -> dict:
         source, visuel, image_prompt = d.get("source",""), d.get("visuel","conceptuel"), d.get("image_prompt","")
     except Exception:
         contexte, fait_choc, consequence, description, source = brut, "", "", "", ""
+        visuel, image_prompt = "conceptuel", ""
+try:
+        d = json.loads(brut)
+        if "erreur" in d:
+            raise ValueError(d["erreur"])
+        contexte, fait_choc = d.get("contexte",""), d.get("fait_choc","")
+        consequence, description = d.get("consequence",""), d.get("description","")
+        source, visuel, image_prompt = d.get("source",""), d.get("visuel","conceptuel"), d.get("image_prompt","")
+    except Exception as e:
+        print(f"  ⚠️  Vérification échouée : {e}")
+        contexte, fait_choc, consequence, description, source = "Fait non vérifiable.", "", "", "", ""
         visuel, image_prompt = "conceptuel", ""
 
     # ----- Image : réel si concret, IA alignée si conceptuel -----
