@@ -1029,12 +1029,20 @@ def _truncate(t, max_chars):
     return out
 
 def _auto_highlight(t):
-    """Si l'IA n'a mis aucun **, surligne automatiquement les chiffres/valeurs."""
+    """Surligne automatiquement les chiffres/valeurs si l'IA n'a pas mis de **."""
     if not t or "**" in t:
         return t
-    t = re.sub(
-        r"(\d+(?:[.,]\d+)?\s*(?:%|€|\$|kg|km|m|cm|mm|To|Go|Mo|ms|s|min|h|ans|an|mois|jours|fois|°C)?)",
-        r" **\1** ", t)
+    
+    # Regex améliorée : capture 10^30kg ou 10^30 kg comme un seul bloc cohérent
+    # \d+(?:[.,]\d+)?      → nombre entier ou décimal (ex: 10, 3.14)
+    # (?:\^\d+)?           → puissance optionnelle collée (ex: ^30)
+    # \s*                  → espaces optionnels entre le nombre et l'unité
+    # (?:%|€|$|kg|...)     → liste des unités connues
+    pattern = r"(\d+(?:[.,]\d+)?(?:\^\d+)?\s*(?:%|€|\$|kg|km|m|cm|mm|To|Go|Mo|ms|s|min|h|ans|an|mois|jours|fois|°C)?)"
+    
+    t = re.sub(pattern, r" **\1** ", t)
+    
+    # Nettoie les doubles espaces créés par le remplacement
     return re.sub(r"\s+", " ", t).strip()
 
 def incruster_texte_pillow(image_in, contexte, fait_choc, consequence, source,
