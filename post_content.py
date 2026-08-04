@@ -128,108 +128,65 @@ def incruster_texte_hierarchique_post(image_in, contexte, fait_choc, consequence
     # Watermark profil + expression uniquement (la source est déjà rendue par Pillow)
     M.overlay_watermark(image_out, image_out, source_text="")
 
-
 def publier_image_texte(pilier: str) -> dict:
     label = PILLARS[pilier]["label"]
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
-    categorie = PILLARS[pilier].get("categorie", "tech")
 
-    # ----- Génération du contenu structuré (JSON) -----
     prompt = (
         "Tu es Nyavodroid. Rédige UNIQUEMENT en français et en JSON :\n"
-        '{\n  "contexte": "1 phrase de contexte général",\n'
-        '  "fait_choc": "le chiffre ou fait surprenant (max 8 mots)",\n'
-        '  "consequence": "1 phrase de conséquence concrète",\n'
-        '  "source": "source vérifiable (ex: Nature, 2026)",\n'
-        '  "legende": "légende Facebook en 2-3 lignes (sans hashtags)"\n}\n\n'
-        f"Sujet imposé : {sujet}. {TON_EDITORIAL}"
+        '{"contexte": "1 phrase de contexte (10-15 mots)", '
+        '"fait_choc": "fait/chiffre surprenant (max 8 mots, mots clés entre **)", '
+        '"consequence": "1 phrase courte de conséquence (10-15 mots)", '
+        '"description": "2 phrases qui développent l explication et la conséquence concrète (30-40 mots)", '
+        '"visuel": "concret si référent physique photographiable, sinon conceptuel", '
+        '"image_prompt": "EN ANGLAIS, scène visuelle concrète liée aux mots-clés, sans texte", '
+        '"source": "organisme réel + année 2024 ou avant"}\n'
+        f"Sujet imposé : {sujet}."
     )
-    print(f"  📝 Génération contenu post image...\n     Axe : {label}\n     Sujet : {sujet}")
-    brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, "(post json)")
-    brut = brut.strip()
-    if brut.startswith("```json"):
-        brut = brut[7:]
-    if brut.endswith("```"):
-        brut = brut[:-3]
-
+    print(f"  📝 Génération post image...\n     Sujet : {sujet}")
+    brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, "(post json)").strip()
+    if brut.startswith("```json"): brut = brut[7:]
+    if brut.endswith("```"): brut = brut[:-3]
     try:
-        data = json.loads(brut)
-        contexte = data.get("contexte", "")
-        fait_choc = data.get("fait_choc", "")
-        consequence = data.get("consequence", "")
-        source = data.get("source", "")
-        legende = data.get("legende", "")
+        d = json.loads(brut)
+        contexte, fait_choc = d.get("contexte",""), d.get("fait_choc","")
+        consequence, description = d.get("consequence",""), d.get("description","")
+        source, visuel, image_prompt = d.get("source",""), d.get("visuel","conceptuel"), d.get("image_prompt","")
     except Exception:
-        print("  ⚠️ JSON invalide, fallback légende simple.")
-        contexte = brut
-        fait_choc = ""
-        consequence = ""
-        source = ""
-        legende = brut
+        contexte, fait_choc, consequence, description, source = brut, "", "", "", ""
+        visuel, image_prompt = "conceptuel", ""
 
-    # Nettoyage
-    contexte = M.clean_text(contexte)
-    fait_choc = M.clean_text(fait_choc)
-    consequence = M.clean_text(consequence)
-    source = M.clean_text(source)
-
-   # ----- Image : Décision Pexels vs IA selon pilier -----
-    categorie = PILLARS[pilier].get("categorie", "tech")
-    use_pexels = (categorie in ["tech", "science"]) 
-
-    if use_pexels:
-        print(f"  🖼️  Recherche photo réelle sur Pexels : {sujet}")
-        success = M.get_image_from_pexels(sujet, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT))
-        
-        if not success:
-            print(f"  🖼️  Fallback IA sécurisé pour : {sujet}")
-            prompt_img = (
-                f"Professional documentary photography of {sujet}, photorealistic, 8k, sharp focus. "
-                f"NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS, NO TYPOGRAPHY."
-            )
-            M.image_avec_fallback(prompt_img, GEMINI_API_KEY, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT))
+    # ----- Image : réel si concret, IA alignée si conceptuel -----
+    img_prompt = image_prompt or f"concept related to {sujet}"
+    if visuel == "concret":
+        print(f"  🖼️  [Pexels] photo réelle : {sujet}")
+        if not M.get_image_from_pexels(sujet, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT)):
+            print("  ⚠️  [Pexels] échec → IA alignée mots-clés")
+            M.image_avec_fallback(img_prompt, GEMINI_API_KEY, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT))
     else:
-        print(f"  ️  Génération IA conceptuelle pour : {sujet}")
-        prompt_img = (
-            f"Abstract conceptual art representing {sujet}, premium editorial style, "
-            f"deep violet and midnight blue tones, clean composition. "
-            f"ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS."
-        )
-        M.image_avec_fallback(prompt_img, GEMINI_API_KEY, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT))
+        print("  🎨 [IA] visuel conceptuel aligné mots-clés")
+        M.image_avec_fallback(img_prompt, GEMINI_API_KEY, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT))
 
-    # ----- Incrustation du texte hiérarchique + watermark -----
-    if contexte or fait_choc or consequence:
-        print("  🎨 Incrustation texte + watermark double...")
+    # ----- Incrustation -----
+    if fait_choc or consequence:
         incruster_texte_hierarchique_post(IMAGE_PATH, contexte, fait_choc, consequence, source, IMAGE_PATH)
     else:
         M.overlay_watermark(IMAGE_PATH, IMAGE_PATH, source_text="")
 
-    # ----- Assemblage de la légende finale -----
-    legende_finale = f"{contexte}\n\n{fait_choc}\n\n{consequence}"
-    if source:
-        legende_finale += f"\n\nSource : {source}"
-    legende_finale += "\n\n#Nyavodroid"
+    # ----- Légende développée (rapport 3.1) -----
+    legende_finale = f"{contexte}\n\n{fait_choc.replace('**','')}\n\n{description}\n\nSource : {source}\n\n#Nyavodroid"
+    print(f"\n📌 Sujet : {sujet}\n📌 Légende :\n{legende_finale}\n")
 
-    print(f"\n📌 Axe : {label}\n📌 Sujet : {sujet}\n📌 Légende :\n{legende_finale}\n")
-
-    # ----- Publication -----
     ep = f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/photos"
     try:
         with open(IMAGE_PATH, "rb") as f:
-            r = M._req("POST", ep,
-                       data={"caption": legende_finale, "access_token": M.FB_PAGE_ACCESS_TOKEN},
-                       files={"source": (os.path.basename(IMAGE_PATH), f, "image/png")},
-                       timeout=M.TIMEOUT)
+            r = M._req("POST", ep, data={"caption": legende_finale, "access_token": M.FB_PAGE_ACCESS_TOKEN},
+                       files={"source": (os.path.basename(IMAGE_PATH), f, "image/png")}, timeout=M.TIMEOUT)
         res = r.json()
-        if "id" not in res:
-            raise ValueError(f"Réponse FB inattendue : {res}")
+        if "id" not in res: raise ValueError(f"Réponse FB inattendue : {res}")
         print(f"  ✅ Image+Texte publié — ID : {res['id']}")
         return res
-    except requests.exceptions.HTTPError as e:
-        raise M.fb_error(e, "photo + légende") from e
-    except OSError as e:
-        raise RuntimeError(f"Fichier image illisible : {e}") from e
-
+    except requests.exceptions.HTTPError as e: raise M.fb_error(e, "photo + légende") from e
 
 # ══════════════════════════════════════════════
 #  FORMAT 3 : REEL — génération des phrases
