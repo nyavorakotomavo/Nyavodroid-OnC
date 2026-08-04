@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Phase 2 — Génération voix off fish.audio.
+Phase 2 — Génération voix off via Edge TTS (gratuit, illimité).
 Entrée  : narration.txt
 Sortie  : voice.mp3 + phrase_times.json (timestamps exacts sans Whisper)
 
 Stratégie : on génère CHAQUE phrase séparément → on connaît sa durée exacte
            (ffprobe) → les timestamps sont 100 % fiables et synchronisés.
 """
+import asyncio
 import json
 import os
 import re as _re
@@ -15,25 +16,17 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import requests
+from video_pipeline.config_video import BASE_DIR, VOICE_FILE
 
-from video_pipeline.config_video import (
-    BASE_DIR, FISH_TTS_URL, FISH_LATENCY, FISH_VOICE_ID, FISH_API_KEY, VOICE_FILE
-)
+# Voix Edge TTS française (masculine, naturelle)
+EDGE_VOICE = "fr-FR-HenriNeural"
 
-
-# ──────────────────────────────────────────────
-#  Caractères invisibles/Unicode parasites
-#  (regex explicite, aucun caractère caché dans le code)
-# ──────────────────────────────────────────────
+# Caractères invisibles à supprimer
 _INVISIBLE = _re.compile(
-    "[‎‏‍‌‬‪-‮⁦-⁩]"
+    "[\u200e\u200f\u200b\u200c\u200d\ufeff\u00ad\u2060\u180e\u202a-\u202e\u2066-\u2069]"
 )
 
 
-# ──────────────────────────────────────────────
-#  Helpers
-# ──────────────────────────────────────────────
 def get_audio_duration(path: str) -> float:
     """Retourne la durée en secondes d'un fichier audio (ffprobe)."""
     try:
@@ -46,53 +39,30 @@ def get_audio_duration(path: str) -> float:
         return 0.0
 
 
-def tts_fish_audio(text: str, out_path: str) -> bool:
-    """Appelle fish.audio /v1/tts (clé + texte nettoyés, UTF-8 forcé). Autonome."""
-    if not FISH_API_KEY:
-        print("    ❌ FISH_API_KEY absente")
-        return False
-
-    # 1) Nettoie la CLÉ (retire le \u200e qui cassait le header Latin-1)
-    key = _INVISIBLE.sub("", FISH_API_KEY or "").strip()
-
-    # 2) Nettoie le TEXTE (caractères invisibles du LLM)
-    text_clean = _INVISIBLE.sub("", text or "")
-    text_clean = "".join(c for c in text_clean if c.isprintable() or c in " \n\t").strip()
-    if not text_clean:
-        print("    ❌ Texte vide après nettoyage")
-        return False
-
-    headers = {
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json; charset=utf-8",
-    }
-
-    body = {"text": text_clean, "latency": FISH_LATENCY}
-    if FISH_VOICE_ID:
-        body["reference_id"] = FISH_VOICE_ID
-
+async def _tts_edge_async(text: str, out_path: str) -> bool:
+    """TTS via Edge TTS (gratuit, illimité, français haute qualité)."""
     try:
-        # 3) Force le body en UTF-8 (empêche requests de tenter Latin-1)
-        json_bytes = json.dumps(body, ensure_ascii=False).encode("utf-8")
-
-        r = requests.post(
-            FISH_TTS_URL,
-            headers=headers,
-            data=json_bytes,
-            stream=True,
-            timeout=60,
-        )
-        r.raise_for_status()
-
-        with open(out_path, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-
-        return os.path.getsize(out_path) > 1024
+        import edge_tts
+        
+        # Nettoyage du texte (caractères invisibles)
+        text_clean = _INVISIBLE.sub("", text or "")
+        text_clean = "".join(c for c in text_clean if c.isprintable() or c in " \n\t").strip()
+        
+        if not text_clean:
+            print("    ❌ Texte vide après nettoyage")
+            return False
+        
+        communicate = edge_tts.Communicate(text_clean, EDGE_VOICE)
+        await communicate.save(out_path)
+        return os.path.isfile(out_path) and os.path.getsize(out_path) > 1024
     except Exception as e:
-        print(f"    ❌ fish.audio échec : {e}")
+        print(f"    ❌ Edge TTS échec : {e}")
         return False
+
+
+def tts_edge(text: str, out_path: str) -> bool:
+    """Wrapper synchrone pour Edge TTS."""
+    return asyncio.run(_tts_edge_async(text, out_path))
 
 
 def concat_audio(paths: list, output: str) -> bool:
@@ -117,9 +87,6 @@ def concat_audio(paths: list, output: str) -> bool:
         return False
 
 
-# ──────────────────────────────────────────────
-#  Main
-# ──────────────────────────────────────────────
 def main():
     narration_path = os.path.join(BASE_DIR, "narration.txt")
     if not os.path.isfile(narration_path):
@@ -129,7 +96,7 @@ def main():
     with open(narration_path, "r", encoding="utf-8") as f:
         phrases = [p.strip() for p in f.readlines() if p.strip()]
 
-    print(f"\n🎙️  [02_voice] Génération de {len(phrases)} phrases...")
+    print(f"\n🎙️  [02_voice] Génération de {len(phrases)} phrases (Edge TTS)...")
     phrases_dir = os.path.join(BASE_DIR, "phrases")
     os.makedirs(phrases_dir, exist_ok=True)
 
@@ -140,7 +107,7 @@ def main():
     for i, phrase in enumerate(phrases, 1):
         audio_path = os.path.join(phrases_dir, f"phrase_{i:03d}.mp3")
         print(f"  🎙️  Phrase {i}/{len(phrases)}...")
-        ok = tts_fish_audio(phrase, audio_path)
+        ok = tts_edge(phrase, audio_path)
         if not ok:
             print(f"    ⚠️  Phrase {i} sautée (TTS échoué)")
             continue
