@@ -14,38 +14,47 @@ STORY_IMAGE_PATH = "story_image.png"
 def generer_texte_story():
     pilier = random.choices(PILLAR_KEYS, weights=[PILLAR_WEIGHTS[k] for k in PILLAR_KEYS], k=1)[0]
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
+    
+    # Prompt avec auto-vérification intégrée (technique 2-passes [[8]])
     prompt = (
-        "Tu es Nyavodroid. Rédige UNIQUEMENT en français. Réponds EXACTEMENT en JSON :\n"
-        '{"texte": "anecdote FACTUELLE en 2 phrases (25-35 mots) avec 2-3 mots clés entre **", '
-        '"visuel": "concret si référent physique photographiable, sinon conceptuel", '
-        '"image_prompt": "EN ANGLAIS, scène visuelle concrète liée aux mots-clés du sujet, sans texte", '
-        '"source": "organisme réel + année 2024 ou avant"}\n'
-        "INTERDIT : chiffres inventés, année 2025/2026, texte coupé.\n"
+        "Tu es Nyavodroid, un expert fact-checker. Tu dois générer du contenu 100% vérifié.\n\n"
+        "ÉTAPE 1 — Génère une anecdote factuelle sur le sujet.\n"
+        "ÉTAPE 2 — Vérifie-la en te posant ces 3 questions :\n"
+        "  Q1: La source citée existe-t-elle réellement et est-elle accessible ?\n"
+        "  Q2: Les chiffres/années sont-ils cohérents avec la réalité documentée ?\n"
+        "  Q3: L'image_prompt décrit-il visuellement le sujet SANS erreur technique ?\n"
+        "       (ex: NoSQL ≠ JSON, HTTP/3 ≠ TCP, CDN ≠ serveur unique)\n"
+        "ÉTAPE 3 — Si une réponse est 'non' ou 'incertain', corrige avant de répondre.\n\n"
+        "RÈGLES STRICTES :\n"
+        "- Jamais de chiffre inventé. Jamais d'année > 2024.\n"
+        "- Source obligatoire : organisme réel + année ≤ 2024.\n"
+        "- image_prompt EN ANGLAIS : scène visuelle concrète, techniquement exacte, sans texte.\n"
+        "- Si tu ne peux pas vérifier un fait, réponds {\"erreur\": \"fait non vérifiable\"}.\n\n"
+        "Réponds EXACTEMENT en JSON :\n"
+        '{"texte": "anecdote FACTUELLE 2 phrases (25-35 mots) avec 2-3 mots clés entre **", '
+        '"visuel": "concret ou conceptuel", '
+        '"image_prompt": "EN ANGLAIS, scène techniquement exacte liée aux mots-clés, sans texte", '
+        '"source": "organisme réel + année ≤ 2024"}\n\n'
         f"Sujet : {sujet}."
     )
-    print(f"  📝 Génération story...\n     Sujet : {sujet}")
+    
+    print(f"  📝 Génération story (avec auto-vérification)...\n     Sujet : {sujet}")
     brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, "[story]").strip()
     if brut.startswith("```json"): brut = brut[7:]
     if brut.endswith("```"): brut = brut[:-3]
+    
     try:
         d = json.loads(brut)
+        if "erreur" in d:
+            raise ValueError(d["erreur"])
         fait_choc, consequence = d.get("texte", ""), ""
         source, visuel, image_prompt = d.get("source",""), d.get("visuel","conceptuel"), d.get("image_prompt","")
-    except Exception:
-        fait_choc, consequence, source = brut, "", ""
+    except Exception as e:
+        print(f"  ⚠️  Vérification échouée ou JSON invalide : {e}")
+        fait_choc, consequence, source = "Fait non vérifiable pour ce sujet.", "", ""
         visuel, image_prompt = "conceptuel", ""
+    
     return pilier, sujet, fait_choc, consequence, source, visuel, image_prompt
-
-def generer_image_story(pilier, sujet, chemin, visuel, image_prompt):
-    img_prompt = image_prompt or f"concept related to {sujet}"
-    if visuel == "concret":
-        print(f"  🖼️  [Pexels] photo réelle : {sujet}")
-        if M.get_image_from_pexels(sujet, chemin, size=(STORY_WIDTH, STORY_HEIGHT)):
-            print("  ✅ [Pexels] photo réelle utilisée"); return
-        print("  ⚠️  [Pexels] échec → IA alignée mots-clés")
-    else:
-        print("  🎨 [IA] visuel conceptuel aligné mots-clés")
-    M.image_avec_fallback(img_prompt, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
 
 def incruster_texte_hierarchique(image_in, contexte, fait_choc, consequence, source, image_out):
     M.incruster_texte_pillow(image_in, contexte, fait_choc, consequence, source,
