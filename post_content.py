@@ -132,17 +132,17 @@ def publier_image_texte(pilier: str) -> dict:
     label = PILLARS[pilier]["label"]
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
 
-   prompt = (
+    prompt = (
         "Tu es Nyavodroid, expert fact-checker. Contenu 100% vérifié obligatoire.\n\n"
         "ÉTAPE 1 — Génère contexte + fait_choc + conséquence + description.\n"
         "ÉTAPE 2 — Auto-vérification (3 questions) :\n"
         "  Q1: Source réelle et accessible ?\n"
         "  Q2: Chiffres/années cohérents avec la réalité ?\n"
-        "  Q3: image_prompt techniquement exact ? (NoSQL≠JSON, HTTP/3≠TCP, CDN≠serveur unique)\n"
+        "  Q3: image_prompt techniquement exact ? (NoSQL≠JSON, HTTP/3TCP, CDN≠serveur unique)\n"
         "ÉTAPE 3 — Corrige si nécessaire avant de répondre.\n\n"
         "RÈGLES :\n"
-        "- Jamais de chiffre inventé. Année ≤ 2025.\n"
-        "- Source obligatoire : organisme réel + année ≤ 2025.\n"
+        "- Jamais de chiffre inventé. Année ≤ 2024.\n"
+        "- Source obligatoire : organisme réel + année ≤ 2024.\n"
         "- image_prompt EN ANGLAIS : scène techniquement exacte, sans texte.\n"
         "- Si non vérifiable : {\"erreur\": \"fait non vérifiable\"}.\n\n"
         "Réponds EXACTEMENT en JSON :\n"
@@ -157,25 +157,20 @@ def publier_image_texte(pilier: str) -> dict:
     )
     print(f"  📝 Génération post image...\n     Sujet : {sujet}")
     brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, "(post json)").strip()
-    if brut.startswith("```json"): brut = brut[7:]
-    if brut.endswith("```"): brut = brut[:-3]
+    if brut.startswith("```json"):
+        brut = brut[7:]
+    if brut.endswith("```"):
+        brut = brut[:-3]
+
     try:
-        d = json.loads(brut)
-        contexte, fait_choc = d.get("contexte",""), d.get("fait_choc","")
-        consequence, description = d.get("consequence",""), d.get("description","")
-        source, visuel, image_prompt = d.get("source",""), d.get("visuel","conceptuel"), d.get("image_prompt","")
-    except Exception:
-        contexte, fait_choc, consequence, description, source = brut, "", "", "", ""
-        visuel, image_prompt = "conceptuel", ""
-try:
         d = json.loads(brut)
         if "erreur" in d:
             raise ValueError(d["erreur"])
-        contexte, fait_choc = d.get("contexte",""), d.get("fait_choc","")
-        consequence, description = d.get("consequence",""), d.get("description","")
-        source, visuel, image_prompt = d.get("source",""), d.get("visuel","conceptuel"), d.get("image_prompt","")
+        contexte, fait_choc = d.get("contexte", ""), d.get("fait_choc", "")
+        consequence, description = d.get("consequence", ""), d.get("description", "")
+        source, visuel, image_prompt = d.get("source", ""), d.get("visuel", "conceptuel"), d.get("image_prompt", "")
     except Exception as e:
-        print(f"  ⚠️  Vérification échouée : {e}")
+        print(f"  ⚠️ Vérification échouée ou JSON invalide : {e}")
         contexte, fait_choc, consequence, description, source = "Fait non vérifiable.", "", "", "", ""
         visuel, image_prompt = "conceptuel", ""
 
@@ -196,7 +191,7 @@ try:
     else:
         M.overlay_watermark(IMAGE_PATH, IMAGE_PATH, source_text="")
 
-    # ----- Légende développée (rapport 3.1) -----
+    # ----- Légende développée -----
     legende_finale = f"{contexte}\n\n{fait_choc.replace('**','')}\n\n{description}\n\nSource : {source}\n\n#Nyavodroid"
     print(f"\n📌 Sujet : {sujet}\n📌 Légende :\n{legende_finale}\n")
 
@@ -206,10 +201,14 @@ try:
             r = M._req("POST", ep, data={"caption": legende_finale, "access_token": M.FB_PAGE_ACCESS_TOKEN},
                        files={"source": (os.path.basename(IMAGE_PATH), f, "image/png")}, timeout=M.TIMEOUT)
         res = r.json()
-        if "id" not in res: raise ValueError(f"Réponse FB inattendue : {res}")
+        if "id" not in res:
+            raise ValueError(f"Réponse FB inattendue : {res}")
         print(f"  ✅ Image+Texte publié — ID : {res['id']}")
         return res
-    except requests.exceptions.HTTPError as e: raise M.fb_error(e, "photo + légende") from e
+    except requests.exceptions.HTTPError as e:
+        raise M.fb_error(e, "photo + légende") from e
+    except OSError as e:
+        raise RuntimeError(f"Fichier image illisible : {e}") from e
 
 # ══════════════════════════════════════════════
 #  FORMAT 3 : REEL — génération des phrases
