@@ -42,23 +42,24 @@ def create_concat_file(scenes: list, output_path: str) -> bool:
 
 
 def build_subtitle_filter(scenes: list) -> str:
-    """Construit le filtre FFmpeg pour afficher les sous-titres synchronisés."""
     filters = []
     
-    for scene in scenes:
+    for i, scene in enumerate(scenes):
         text = scene.get("subtitle_text", "")
         if not text:
             continue
         
-        # Échappement pour FFmpeg
-        text = text.replace("'", "'\\''").replace(":", "\\:")
+        # Écriture dans un fichier pour éviter les problèmes d'échappement FFmpeg
+        txt_file = os.path.join(BASE_DIR, f"sub_scene_{i}.txt")
+        with open(txt_file, "w", encoding="utf-8") as f:
+            f.write(text)
         
         start = scene.get("start", 0)
         end = scene.get("end", start + 3)
         
-        # Position : bas de l'écran, centré
+        # Utilisation de textfile au lieu de text
         filters.append(
-            f"drawtext=text='{text}':"
+            f"drawtext=textfile='{txt_file}':"
             f"fontsize=36:fontcolor=white:borderw=3:bordercolor=black:"
             f"x=(w-text_w)/2:y=h-text_h-80:"
             f"enable='between(t,{start},{end})'"
