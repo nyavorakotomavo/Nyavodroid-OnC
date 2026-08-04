@@ -190,31 +190,23 @@ def publier_image_texte(pilier: str) -> dict:
     force_pexels = any(word in sujet.lower() for word in TEXT_TRIGGER_WORDS)
 
     prompt = (
-        "Tu es Nyavodroid, expert fact-checker. Contenu 100% vérifié obligatoire.\n\n"
-        "ÉTAPE 1 — Génère contexte + fait_choc + conséquence + description.\n"
-        "ÉTAPE 2 — Auto-vérification (3 questions) :\n"
-        "  Q1: Source réelle et accessible ?\n"
-        "  Q2: Chiffres/années cohérents avec la réalité ?\n"
-        "  Q3: image_prompt techniquement exact ET sans aucun texte ?\n"
-        "       (NoSQL≠JSON, HTTP/3≠TCP, CDN≠serveur unique, ZÉRO caractères dans l'image)\n"
-        "ÉTAPE 3 — Corrige si nécessaire avant de répondre.\n\n"
-        "RÈGLES :\n"
-        "- Jamais de chiffre inventé. Année ≤ 2024.\n"
-        "- FORMAT DES NOMBRES : les puissances s'écrivent SANS espaces (ex: 10^30, pas 10 ^ 30). Les unités sont collées au nombre (ex: 30kg, pas 30 kg). Jamais de ^ isolé.\n"
-        "- Source obligatoire : organisme réel + année ≤ 2024.\n"
-        '- image_prompt EN ANGLAIS. CRITICAL: absolutely zero text, letters, words, numbers, or typography in the image. '
-        'If the subject involves code, translation, or data, use ONLY abstract visual metaphors (glowing neural networks, light streams, geometric shapes). '
-        'NEVER generate fake text, gibberish, or UI elements with characters.\n'
-        '- Si non vérifiable : {"erreur": "fait non vérifiable"}.\n\n'
-        "Réponds EXACTEMENT en JSON :\n"
-        '{"contexte": "1 phrase (10-15 mots)", '
-        '"fait_choc": "fait/chiffre surprenant (max 8 mots, mots clés entre **)", '
-        '"consequence": "1 phrase courte (10-15 mots)", '
-        '"description": "2 phrases développées (30-40 mots)", '
-        '"visuel": "concret ou conceptuel", '
-        '"image_prompt": "EN ANGLAIS, scène techniquement exacte, ZÉRO texte, métaphores abstraites si tech", '
-        '"source": "organisme réel + année ≤ 2024"}\n\n'
-        f"Sujet imposé : {sujet}."
+        "Tu es Nyavodroid, expert fact-checker tech. Tu publies de l'ACTUALITÉ TECH immédiate.\n\n"
+        "RÈGLE D'OR : Le sujet doit être un ÉVÉNEMENT RÉCENT (annonce, mise à jour, faille, record, lancement). "
+        "INTERDIT : faits historiques passés, généralités, 'saviez-vous que'.\n\n"
+        "ÉTAPE 1 — Génère un post d'actu fluide et narratif.\n"
+        "ÉTAPE 2 — Auto-vérification :\n"
+        "  Q1: Est-ce une news récente (2024-2026) ?\n"
+        "  Q2: Source vérifiable ?\n"
+        "  Q3: image_prompt sans texte ?\n\n"
+        "FORMAT DE RÉPONSE (JSON) :\n"
+        "- contexte : L'accroche news (ex: 'Google vient d'annoncer...', 'Une nouvelle faille critique...'). Pas de label 'Contexte'.\n"
+        "- fait_choc : Le chiffre ou détail clé de l'actu (max 10 mots).\n"
+        "- consequence : L'impact immédiat pour les devs/entreprises.\n"
+        "- description : 2 phrases qui expliquent pourquoi c'est important MAINTENANT.\n"
+        "- visuel : concret (photo réelle) ou conceptuel (abstrait).\n"
+        "- image_prompt : EN ANGLAIS. CRITICAL: zero text. Abstract metaphors if tech.\n"
+        "- source : Organisme + Année.\n\n"
+        f"Sujet imposé (doit être traité comme une NEWS) : {sujet}."
     )
 
     print(f"  📝 Génération post image...\n     Sujet : {sujet}")
