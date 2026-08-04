@@ -550,13 +550,13 @@ def image_avec_fallback(prompt: str, gemini_key: str, chemin: str,
         size = DEFAULT_IMG_SIZE
 
     #Nouveau (agressif + explicite)
-‎prompt = clean_text(prompt) + (
-‎    ", high quality, sharp focus, photorealistic, "
-‎    "ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS, NO TYPOGRAPHY, NO CAPTIONS, NO LABELS, NO WATERMARKS, "
-‎    "NO FAKE TEXT, NO GIBBERISH TEXT, NO CODE SNIPPETS, NO UI ELEMENTS WITH TEXT. "
-‎    "If the concept involves language/code/translation, show abstract visual metaphors ONLY (glowing nodes, light beams, flowing data streams, neural networks) — NEVER render any characters or symbols."
-‎)
-‎
+prompt = clean_text(prompt) + (
+    ", high quality, sharp focus, photorealistic, "
+    "ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS, NO TYPOGRAPHY, NO CAPTIONS, NO LABELS, NO WATERMARKS, "
+    "NO FAKE TEXT, NO GIBBERISH TEXT, NO CODE SNIPPETS, NO UI ELEMENTS WITH TEXT. "
+    "If the concept involves language/code/translation, show abstract visual metaphors ONLY (glowing nodes, light beams, flowing data streams, neural networks) — NEVER render any characters or symbols."
+)
+
     erreurs = []
     tentatives = 0
 
@@ -1004,7 +1004,7 @@ def _apply_logo(img, size=120):
 
 def _clean_keep_stars(t):
     """Nettoie les caractères invisibles MAIS conserve les ** du surlignage."""
-    t = re.sub(r'[‎‏‍‌‬\ufeff\u00ad⁠᠎‪-‮⁦-⁩]', '', t or "")
+    t = re.sub(r'[\ufeff\u00ad--]', '', t or "")
     return ''.join(c for c in t if c.isprintable() or c in '\n\t').strip()
 
 def _truncate(t, max_chars):
