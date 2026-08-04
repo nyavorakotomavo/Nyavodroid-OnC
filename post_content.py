@@ -174,12 +174,14 @@ def incruster_texte_hierarchique_post(image_in, contexte, fait_choc, consequence
 def publier_image_texte(pilier: str) -> dict:
     label = PILLARS[pilier]["label"]
     global _SUJET_TENDANCE_NANALY
-if _SUJET_TENDANCE_NANALY:
-    sujet = _SUJET_TENDANCE_NANALY
-    _SUJET_TENDANCE_NANALY = None  # Reset après utilisation
-    print(f"  🎯 Sujet imposé par NAnaly : {sujet}")
-else:
-    sujet = random.choice(SUJETS_PAR_PILIER[pilier])
+    
+    if _SUJET_TENDANCE_NANALY:
+        sujet = _SUJET_TENDANCE_NANALY
+        _SUJET_TENDANCE_NANALY = None  # Reset après utilisation
+        print(f"  🎯 Sujet imposé par NAnaly : {sujet}")
+    else:
+        sujet = random.choice(SUJETS_PAR_PILIER[pilier])
+    
     # Détection des sujets à risque (génèrent du texte parasite en IA)
     TEXT_TRIGGER_WORDS = ["code", "compiler", "traduction", "translation", "language", "langage", 
                           "database", "sql", "json", "api", "interface", "ui", "screen", "écran",
@@ -212,11 +214,11 @@ else:
         '"source": "organisme réel + année ≤ 2024"}\n\n'
         f"Sujet imposé : {sujet}."
     )
-    
+
     print(f"  📝 Génération post image...\n     Sujet : {sujet}")
     if force_pexels:
         print(f"  ⚠️ Sujet à risque texte détecté → Pexels sera forcé")
-    
+
     brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, "(post json)").strip()
     if brut.startswith("```json"):
         brut = brut[7:]
@@ -230,11 +232,11 @@ else:
         contexte, fait_choc = d.get("contexte", ""), d.get("fait_choc", "")
         consequence, description = d.get("consequence", ""), d.get("description", "")
         source, visuel, image_prompt = d.get("source", ""), d.get("visuel", "conceptuel"), d.get("image_prompt", "")
-        
+
         # Force Pexels si sujet à risque, même si l'IA a dit "conceptuel"
         if force_pexels:
             visuel = "concret"
-            
+
     except Exception as e:
         print(f"  ⚠️ Vérification échouée ou JSON invalide : {e}")
         contexte, fait_choc, consequence, description, source = "Fait non vérifiable.", "", "", "", ""
@@ -242,7 +244,7 @@ else:
 
     # ----- Image : réel si concret ou sujet à risque, IA alignée sinon -----
     img_prompt = image_prompt or f"abstract visual metaphor for {sujet}, no text"
-    
+
     # Double sécurité : tentative Pexels forcée pour les sujets tech
     if any(word in sujet.lower() for word in TEXT_TRIGGER_WORDS):
         print(f"  🖼️ [Pexels] Tentative forcée (sujet à risque texte) : {sujet}")
