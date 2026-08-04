@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """
-Phase 7 — Montage final.
-Entrée  : scenes.json + clips animés + mixed_audio.mp3
-Sortie  : final_video.mp4 (1080x1920, H.264, prêt à publier)
-
-Assemble :
-- Clips vidéo animés (concaténés selon timestamps)
-- Audio mixé (voix + SFX + musique)
-- Sous-titres synchronisés (drawtext FFmpeg)
+Phase 7 — Montage final (blindé).
+Étapes séparées avec fallbacks :
+  A. Concat des clips vidéo          → tmp_video.mp4
+  B. Mux vidéo + audio               → tmp_av.mp4
+  C. Sous-titres (optionnel, police explicite) → final_video.mp4
+Si C échoue, on garde tmp_av.mp4 comme final (vidéo toujours livrée).
 """
 import json
 import os
@@ -17,123 +15,131 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from video_pipeline.config_video import (
-    BASE_DIR, SCENES_FILE, ASSETS_DIR,
-    VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS, VIDEO_CODEC, VIDEO_CRF,
-    FINAL_VIDEO
+    BASE_DIR, SCENES_FILE, ASSETS_DIR, FINAL_VIDEO,
+    VIDEO_CODEC, VIDEO_CRF
 )
 
+FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
-def create_concat_file(scenes: list, output_path: str) -> bool:
-    """Crée le fichier de concaténation pour FFmpeg."""
+
+def _run(cmd: list) -> tuple:
     try:
-        with open(output_path, "w", encoding="utf-8") as f:
-            for scene in scenes:
-                clip_name = scene.get("clip", "")
-                if not clip_name:
-                    continue
-                clip_path = os.path.join(ASSETS_DIR, clip_name)
-                if os.path.isfile(clip_path):
-                    escaped = clip_path.replace("'", "'\\''")
-                    f.write(f"file '{escaped}'\n")
-        return True
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        return (r.returncode == 0), r.stderr
     except Exception as e:
-        print(f"❌ Erreur concat file : {e}")
-        return False
+        return False, str(e)
+
+
+def concat_clips(clips: list, out: str) -> bool:
+    list_file = out + ".txt"
+    with open(list_file, "w", encoding="utf-8") as f:
+        for c in clips:
+            f.write(f"file '{c}'\n")
+    ok, err = _run(["ffmpeg", "-f", "concat", "-safe", "0", "-i", list_file,
+                    "-c", "copy", "-y", out])
+    if os.path.isfile(list_file):
+        os.remove(list_file)
+    if not ok:
+        print(f"    ❌ concat clips : {err[-800:]}")
+    return ok and os.path.isfile(out)
+
+
+def mux_audio(video: str, audio: str, out: str) -> bool:
+    ok, err = _run(["ffmpeg", "-i", video, "-i", audio,
+                    "-c", "copy", "-shortest", "-y", out])
+    if not ok:
+        print(f"    ❌ mux audio : {err[-800:]}")
+    return ok and os.path.isfile(out)
 
 
 def build_subtitle_filter(scenes: list) -> str:
     filters = []
-    
     for i, scene in enumerate(scenes):
         text = scene.get("subtitle_text", "")
         if not text:
             continue
-        
-        # Écriture dans un fichier pour éviter les problèmes d'échappement FFmpeg
         txt_file = os.path.join(BASE_DIR, f"sub_scene_{i}.txt")
         with open(txt_file, "w", encoding="utf-8") as f:
             f.write(text)
-        
         start = scene.get("start", 0)
         end = scene.get("end", start + 3)
-        
-        # Utilisation de textfile au lieu de text
         filters.append(
-            f"drawtext=textfile='{txt_file}':"
+            f"drawtext=fontfile={FONT_PATH}:textfile='{txt_file}':"
             f"fontsize=36:fontcolor=white:borderw=3:bordercolor=black:"
-            f"x=(w-text_w)/2:y=h-text_h-80:"
-            f"enable='between(t,{start},{end})'"
+            f"x=(w-text_w)/2:y=h-text_h-80:enable='between(t,{start},{end})'"
         )
-    
-    return ",".join(filters) if filters else "null"
+    return ",".join(filters) if filters else ""
 
 
-def assemble_video(concat_file: str, audio_file: str, scenes: list, output_path: str) -> bool:
-    """Assemble clips + audio + sous-titres en vidéo finale."""
-    
-    subtitle_filter = build_subtitle_filter(scenes)
-    
-    cmd = [
-        "ffmpeg",
-        "-f", "concat", "-safe", "0", "-i", concat_file,
-        "-i", audio_file,
-        "-vf", subtitle_filter,
-        "-c:v", VIDEO_CODEC, "-preset", "fast", "-crf", str(VIDEO_CRF),
-        "-c:a", "aac", "-b:a", "192k",
-        "-pix_fmt", "yuv420p",
-        "-movflags", "+faststart",
-        "-y", output_path
-    ]
-    
-    try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
-        return os.path.isfile(output_path) and os.path.getsize(output_path) > 10240
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Assemblage échec : {e.stderr[:500]}")
+def add_subtitles(video: str, scenes: list, out: str) -> bool:
+    vf = build_subtitle_filter(scenes)
+    if not vf:
         return False
+    ok, err = _run(["ffmpeg", "-i", video, "-vf", vf,
+                    "-c:v", VIDEO_CODEC, "-preset", "fast", "-crf", str(VIDEO_CRF),
+                    "-c:a", "copy", "-y", out])
+    if not ok:
+        print(f"    ⚠️ sous-titres échec : {err[-800:]}")
+    return ok and os.path.isfile(out)
 
 
 def main():
     if not os.path.isfile(SCENES_FILE):
         print(f"❌ {SCENES_FILE} introuvable")
         sys.exit(1)
-    
-    mixed_audio = os.path.join(BASE_DIR, "mixed_audio.mp3")
-    if not os.path.isfile(mixed_audio):
-        print(f"❌ {mixed_audio} introuvable — lance 06_audio.py d'abord")
-        sys.exit(1)
-    
+
     with open(SCENES_FILE, "r", encoding="utf-8") as f:
         doc = json.load(f)
-    
     scenes = doc.get("scenes", [])
-    if not scenes:
-        print("❌ scenes.json vide")
+
+    # Ne garder que les clips qui existent réellement
+    clips = []
+    for s in scenes:
+        p = os.path.join(ASSETS_DIR, s.get("clip", ""))
+        if s.get("clip") and os.path.isfile(p):
+            clips.append(p)
+    if not clips:
+        print("❌ Aucun clip vidéo trouvé — relance 05_animate.py")
         sys.exit(1)
-    
-    print(f"\n🎬 [07_editor] Montage final ({len(scenes)} scènes)\n")
-    
-    # Fichier de concaténation
-    concat_file = os.path.join(BASE_DIR, "concat.txt")
-    print("  📋 Création fichier concat...")
-    if not create_concat_file(scenes, concat_file):
-        print("❌ Échec concat file")
+
+    print(f"\n🎬 [07_editor] Montage final ({len(clips)} clips)\n")
+
+    # Étape A : concat vidéo
+    tmp_video = os.path.join(BASE_DIR, "tmp_video.mp4")
+    print("  🎞️  Étape A : concat clips...")
+    if not concat_clips(clips, tmp_video):
+        print("❌ Concat vidéo échoué")
         sys.exit(1)
-    
-    # Assemblage final
-    print("  🎞️  Assemblage vidéo...")
-    if assemble_video(concat_file, mixed_audio, scenes, FINAL_VIDEO):
-        size_mb = os.path.getsize(FINAL_VIDEO) / (1024 * 1024)
-        print(f"  ✅ {FINAL_VIDEO} ({size_mb:.1f} MB)")
-        
-        # Nettoyage
-        if os.path.isfile(concat_file):
-            os.remove(concat_file)
-        
-        print(f"\n🎉 Vidéo finale prête à publier !")
+
+    # Étape B : mux audio
+    mixed = os.path.join(BASE_DIR, "mixed_audio.mp3")
+    tmp_av = os.path.join(BASE_DIR, "tmp_av.mp4")
+    current = tmp_video
+    if os.path.isfile(mixed):
+        print("  🔊 Étape B : ajout audio...")
+        if mux_audio(tmp_video, mixed, tmp_av):
+            current = tmp_av
+        else:
+            print("    ⚠️ Audio non ajouté (vidéo muette)")
     else:
-        print("❌ Montage échoué")
-        sys.exit(1)
+        print("    ⚠️ mixed_audio.mp3 absent (vidéo muette)")
+
+    # Étape C : sous-titres (optionnel)
+    print("  📝 Étape C : sous-titres...")
+    if add_subtitles(current, scenes, FINAL_VIDEO):
+        print(f"  ✅ {FINAL_VIDEO} (avec sous-titres)")
+    else:
+        # Fallback : livrer sans sous-titres
+        subprocess.run(["cp", current, FINAL_VIDEO], check=True)
+        print(f"  ✅ {FINAL_VIDEO} (sans sous-titres, fallback)")
+
+    # Nettoyage
+    for t in (tmp_video, tmp_av):
+        if os.path.isfile(t):
+            os.remove(t)
+
+    size_mb = os.path.getsize(FINAL_VIDEO) / (1024 * 1024)
+    print(f"\n🎉 Vidéo finale : {FINAL_VIDEO} ({size_mb:.1f} MB)")
 
 
 if __name__ == "__main__":
