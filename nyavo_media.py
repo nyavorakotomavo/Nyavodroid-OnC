@@ -1020,62 +1020,83 @@ def _truncate(t, max_chars):
         out = t[:max_chars].rsplit(" ", 1)[0].rstrip(".,;:!?")
     return out
 
+def _auto_highlight(t):
+    """Si l'IA n'a mis aucun **, surligne automatiquement les chiffres/valeurs."""
+    if not t or "**" in t:
+        return t
+    t = re.sub(
+        r"(\d+(?:[.,]\d+)?\s*(?:%|€|\$|kg|km|m|cm|mm|To|Go|Mo|ms|s|min|h|ans|an|mois|jours|fois|°C)?)",
+        r" **\1** ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
 def incruster_texte_pillow(image_in, contexte, fait_choc, consequence, source,
                            image_out, target_size):
     w, h = target_size
     img = Image.open(image_in).convert("RGBA")
     img = _crop_resize_pillow(img, (w, h))
 
-    # Dégradé noir en bas (lisibilité)
+    # Dégradé noir en bas
     gradient = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     dg = ImageDraw.Draw(gradient)
     gh = int(h * 0.55)
-    for y in range(gh):
-        a = int(250 * ((y / gh) ** 1.2))
-        dg.line([(0, h - gh + y), (w, h - gh + y)], fill=(0, 0, 0, a))
+    for yy in range(gh):
+        a = int(250 * ((yy / gh) ** 1.2))
+        dg.line([(0, h - gh + yy), (w, h - gh + yy)], fill=(0, 0, 0, a))
     img = Image.alpha_composite(img, gradient)
     img = _apply_logo(img, size=120)
     draw = ImageDraw.Draw(img)
 
-    # Garde-fous : jamais de pavé, jamais de ** orphelins
-    fait_choc = _truncate(_clean_keep_stars(fait_choc), 90)
-    consequence = _truncate(_clean_keep_stars(consequence), 140)
+    # Textes : plafond large + coupe UNIQUEMENT à la phrase complète
+    fait_choc = _truncate(_auto_highlight(_clean_keep_stars(fait_choc or "")), 260)
+    consequence = _truncate(_auto_highlight(_clean_keep_stars(consequence or "")), 200)
     source = clean_text(source or "")
 
-    font_title = get_font(54, bold=True)
-    font_detail = get_font(32, bold=False)
-    font_src = get_font(20, bold=False)
     max_w = w - 2 * MARGIN
+    top_text = TOP_SAFE + 140
+    avail_h = h - BOT_SAFE - top_text
+    tok_re = re.compile(r"\*\*[^*]+\*\*|\S+")
 
-    def wrap_words(text, font):
+    def wrap_tokens(text, font):
         lines, cur, cur_w = [], [], 0
-        for word in text.split():
-            hl = word.startswith("**") and word.endswith("**") and len(word) > 4
-            cw = word.replace("**", "")
+        for tok in tok_re.findall(text):
+            hl = tok.startswith("**") and tok.endswith("**") and len(tok) > 4
+            cw = tok.replace("**", "")
             ww = draw.textlength(cw, font=font) + (24 if hl else 0)
+            if hl and ww > max_w:
+                hl = False; ww = draw.textlength(cw, font=font)
             sp = draw.textlength(" ", font=font) if cur else 0
-            if cur_w + ww + sp <= max_w:
+            if cur_w + ww + sp <= max_w or not cur:
                 cur.append((cw, hl, ww)); cur_w += ww + sp
             else:
-                if cur: lines.append(cur)
-                cur, cur_w = [(cw, hl, ww)], ww
+                lines.append(cur); cur, cur_w = [(cw, hl, ww)], ww
         if cur: lines.append(cur)
         return lines
 
-    title_lines = wrap_words(fait_choc, font_title) if fait_choc else []
-    detail_lines = wrap_words(consequence, font_detail) if consequence else []
+    def layout(size):
+        ft = get_font(size, bold=True)
+        fd = get_font(max(24, int(size * 0.62)), bold=False)
+        tl = wrap_tokens(fait_choc, ft) if fait_choc else []
+        dl = wrap_tokens(consequence, fd) if consequence else []
+        at, bt = ft.getmetrics(); lh_t = at + bt; st_t = lh_t + 14
+        ad, bd = fd.getmetrics(); lh_d = ad + bd; st_d = lh_d + 10
+        total = len(tl) * st_t + len(dl) * st_d + (30 if source else 0) + 36
+        return {"ft": ft, "fd": fd, "tl": tl, "dl": dl,
+                "lh_t": lh_t, "lh_d": lh_d, "st_t": st_t, "st_d": st_d, "total": total}
 
-    asc_t, desc_t = font_title.getmetrics(); lh_t, stride_t = asc_t + desc_t, (asc_t + desc_t) + 14
-    asc_d, desc_d = font_detail.getmetrics(); lh_d, stride_d = asc_d + desc_d, (asc_d + desc_d) + 10
+    # Police auto-ajustée : le texte COMPLET tient toujours, jamais coupé
+    L = None
+    for size in (52, 46, 42, 38, 34, 30):
+        cand = layout(size)
+        if cand["total"] <= avail_h:
+            L = cand
+            break
+    if L is None:
+        L = layout(30)
 
-    total = (len(title_lines) * stride_t + len(detail_lines) * stride_d
-             + (30 if source else 0) + 36)
+    y = max(top_text, h - BOT_SAFE - L["total"])
 
-    # Ancrage bas, jamais sous le logo, jamais hors cadre
-    y = max(TOP_SAFE + 140, h - BOT_SAFE - total)
-
-    for lines, font, lh, stride in ((title_lines, font_title, lh_t, stride_t),
-                                    (detail_lines, font_detail, lh_d, stride_d)):
+    for lines, font, lh, st in ((L["tl"], L["ft"], L["lh_t"], L["st_t"]),
+                                (L["dl"], L["fd"], L["lh_d"], L["st_d"])):
         for line in lines:
             lw = sum(ww for _, _, ww in line) + 8 * (len(line) - 1)
             x = (w - lw) // 2
@@ -1087,12 +1108,13 @@ def incruster_texte_pillow(image_in, contexte, fait_choc, consequence, source,
                     draw.text((x + 2, y + 2), cw, font=font, fill=(0, 0, 0, 160))
                     draw.text((x, y), cw, font=font, fill=COLORS["blanc"])
                 x += ww + 8
-            y += stride
+            y += st
         y += 18
 
     if source:
-        st = f"Source : {source}"
-        sw = draw.textlength(st, font=font_src)
-        draw.text(((w - sw) // 2, h - BOT_SAFE), st, font=font_src, fill=COLORS["gris_clair"])
+        font_src = get_font(20, bold=False)
+        stxt = f"Source : {source}"
+        sw = draw.textlength(stxt, font=font_src)
+        draw.text(((w - sw) // 2, h - BOT_SAFE), stxt, font=font_src, fill=COLORS["gris_clair"])
 
     img.convert("RGB").save(image_out)
