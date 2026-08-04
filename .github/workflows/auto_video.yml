@@ -2,8 +2,8 @@ name: Auto Video (quotidien 17:00 UTC)
 
 on:
   schedule:
-    - cron: '0 17 * * *'  # Tous les jours à 17:00 UTC
-  workflow_dispatch:      # Permet le déclenchement manuel
+    - cron: '0 17 * * *'
+  workflow_dispatch:
 
 jobs:
   generate-and-publish:
@@ -51,6 +51,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python video_pipeline/04_visuals.py
       
       - name: Phase 5 — Animation
