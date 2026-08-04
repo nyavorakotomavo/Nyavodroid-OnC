@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 """
 Phase 7 — Montage final (blindé).
-Étapes séparées avec fallbacks :
-  A. Concat des clips vidéo          → tmp_video.mp4
-  B. Mux vidéo + audio               → tmp_av.mp4
-  C. Sous-titres (optionnel, police explicite) → final_video.mp4
-Si C échoue, on garde tmp_av.mp4 comme final (vidéo toujours livrée).
+CORRECTION : chemins ABSOLUS dans la liste concat (sinon FFmpeg double le chemin).
 """
 import json
 import os
@@ -31,16 +27,31 @@ def _run(cmd: list) -> tuple:
 
 
 def concat_clips(clips: list, out: str) -> bool:
-    list_file = out + ".txt"
+    list_file = os.path.abspath(out + ".txt")
+    # Chemins ABSOLUS : évite la résolution relative qui doublait le chemin
     with open(list_file, "w", encoding="utf-8") as f:
         for c in clips:
-            f.write(f"file '{c}'\n")
+            f.write(f"file '{os.path.abspath(c)}'\n")
     ok, err = _run(["ffmpeg", "-f", "concat", "-safe", "0", "-i", list_file,
                     "-c", "copy", "-y", out])
     if os.path.isfile(list_file):
         os.remove(list_file)
+    if ok and os.path.isfile(out):
+        return True
+    print(f"    ⚠️ concat copy échec, fallback ré-encodage : {err[-500:]}")
+
+    # Fallback : concat filter avec ré-encodage
+    inputs, parts = [], []
+    for i, c in enumerate(clips):
+        inputs += ["-i", os.path.abspath(c)]
+        parts.append(f"[{i}:v]")
+    parts.append("".join(f"[{i}:v]" for i in range(len(clips))) +
+                 f"concat=n={len(clips)}:v=1:a=0[out]")
+    ok, err = _run(["ffmpeg", *inputs, "-filter_complex", ";".join(parts),
+                    "-map", "[out]", "-c:v", VIDEO_CODEC, "-preset", "fast",
+                    "-crf", str(VIDEO_CRF), "-pix_fmt", "yuv420p", "-y", out])
     if not ok:
-        print(f"    ❌ concat clips : {err[-800:]}")
+        print(f"    ❌ concat filter : {err[-800:]}")
     return ok and os.path.isfile(out)
 
 
@@ -58,7 +69,7 @@ def build_subtitle_filter(scenes: list) -> str:
         text = scene.get("subtitle_text", "")
         if not text:
             continue
-        txt_file = os.path.join(BASE_DIR, f"sub_scene_{i}.txt")
+        txt_file = os.path.abspath(os.path.join(BASE_DIR, f"sub_scene_{i}.txt"))
         with open(txt_file, "w", encoding="utf-8") as f:
             f.write(text)
         start = scene.get("start", 0)
@@ -92,7 +103,6 @@ def main():
         doc = json.load(f)
     scenes = doc.get("scenes", [])
 
-    # Ne garder que les clips qui existent réellement
     clips = []
     for s in scenes:
         p = os.path.join(ASSETS_DIR, s.get("clip", ""))
@@ -104,14 +114,12 @@ def main():
 
     print(f"\n🎬 [07_editor] Montage final ({len(clips)} clips)\n")
 
-    # Étape A : concat vidéo
     tmp_video = os.path.join(BASE_DIR, "tmp_video.mp4")
     print("  🎞️  Étape A : concat clips...")
     if not concat_clips(clips, tmp_video):
         print("❌ Concat vidéo échoué")
         sys.exit(1)
 
-    # Étape B : mux audio
     mixed = os.path.join(BASE_DIR, "mixed_audio.mp3")
     tmp_av = os.path.join(BASE_DIR, "tmp_av.mp4")
     current = tmp_video
@@ -124,16 +132,13 @@ def main():
     else:
         print("    ⚠️ mixed_audio.mp3 absent (vidéo muette)")
 
-    # Étape C : sous-titres (optionnel)
     print("  📝 Étape C : sous-titres...")
     if add_subtitles(current, scenes, FINAL_VIDEO):
         print(f"  ✅ {FINAL_VIDEO} (avec sous-titres)")
     else:
-        # Fallback : livrer sans sous-titres
         subprocess.run(["cp", current, FINAL_VIDEO], check=True)
         print(f"  ✅ {FINAL_VIDEO} (sans sous-titres, fallback)")
 
-    # Nettoyage
     for t in (tmp_video, tmp_av):
         if os.path.isfile(t):
             os.remove(t)
