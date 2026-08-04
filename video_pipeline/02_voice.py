@@ -39,22 +39,39 @@ def tts_fish_audio(text: str, out_path: str) -> bool:
         print("    ❌ FISH_API_KEY absente")
         return False
 
+    # 🛠️ CORRECTION : Nettoyage des caractères invisibles/incompatibles
+    import nyavo_media as M
+    text_clean = M.clean_text(text)
+    
+    # Sécurité supplémentaire : encoder en UTF-8 strict pour éviter les surprises
+    try:
+        text_clean.encode('utf-8')
+    except UnicodeEncodeError:
+        text_clean = text_clean.encode('ascii', 'ignore').decode('ascii')
+
     headers = {
         "Authorization": f"Bearer {FISH_API_KEY}",
-        "Content-Type": "application/json",
+        "Content-Type": "application/json; charset=utf-8",
     }
-    body = {"text": text, "latency": FISH_LATENCY}
+    
+    body = {"text": text_clean, "latency": FISH_LATENCY}
     if FISH_VOICE_ID:
         body["reference_id"] = FISH_VOICE_ID
 
     try:
-        r = requests.post(FISH_TTS_URL, headers=headers, json=body,
+        # On force l'encodage JSON en UTF-8
+        import json
+        json_data = json.dumps(body, ensure_ascii=False).encode('utf-8')
+        
+        r = requests.post(FISH_TTS_URL, headers=headers, data=json_data,
                           stream=True, timeout=60)
         r.raise_for_status()
+        
         with open(out_path, "wb") as f:
             for chunk in r.iter_content(chunk_size=8192):
                 if chunk:
                     f.write(chunk)
+                    
         return os.path.getsize(out_path) > 1024
     except Exception as e:
         print(f"    ❌ fish.audio échec : {e}")
