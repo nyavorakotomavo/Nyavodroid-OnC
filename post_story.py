@@ -59,6 +59,7 @@ def generer_texte_story():
         "ÉTAPE 3 — Corrige si nécessaire avant de répondre.\n\n"
         "RÈGLES STRICTES :\n"
         "- Jamais de chiffre inventé. Année ≤ 2024.\n"
+        "- FORMAT DES NOMBRES : les puissances s'écrivent SANS espaces (ex: 10^30, pas 10 ^ 30). Les unités sont collées au nombre (ex: 30kg, pas 30 kg). Jamais de ^ isolé.\n"
         "- Source obligatoire : organisme réel + année ≤ 2024.\n"
         "- image_prompt EN ANGLAIS : scène visuelle concrète, techniquement exacte, sans texte.\n"
         "- Si non vérifiable : {\"erreur\": \"fait non vérifiable\"}.\n"
