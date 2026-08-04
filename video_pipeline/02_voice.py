@@ -39,46 +39,50 @@ def get_audio_duration(path: str) -> float:
         print(f"    ⚠️ ffprobe échec pour {path} : {e}")
         return 0.0
 
-
 def tts_fish_audio(text: str, out_path: str) -> bool:
-    """Appelle fish.audio /v1/tts et sauvegarde l'audio."""
+    """Appelle fish.audio /v1/tts et sauvegarde l'audio (clé + texte nettoyés, UTF-8 forcé)."""
+    import json
+
     if not FISH_API_KEY:
         print("    ❌ FISH_API_KEY absente")
         return False
 
-    # 🛠️ CORRECTION : Nettoyage des caractères invisibles/incompatibles
-    import nyavo_media as M
-    text_clean = M.clean_text(text)
-    
-    # Sécurité supplémentaire : encoder en UTF-8 strict pour éviter les surprises
-    try:
-        text_clean.encode('utf-8')
-    except UnicodeEncodeError:
-        text_clean = text_clean.encode('ascii', 'ignore').decode('ascii')
+    # 1) Nettoie la CLÉ (le \u200e collé à la clé cassait le header Latin-1)
+    key = _clean_secret(FISH_API_KEY)
+
+    # 2) Nettoie le TEXTE (caractères invisibles du LLM)
+    text_clean = _clean_speech_text(text)
+    if not text_clean:
+        print("    ❌ Texte vide après nettoyage")
+        return False
 
     headers = {
-        "Authorization": f"Bearer {FISH_API_KEY}",
+        "Authorization": f"Bearer {key}",
         "Content-Type": "application/json; charset=utf-8",
     }
-    
+
     body = {"text": text_clean, "latency": FISH_LATENCY}
     if FISH_VOICE_ID:
         body["reference_id"] = FISH_VOICE_ID
 
     try:
-        # On force l'encodage JSON en UTF-8
-        import json
-        json_data = json.dumps(body, ensure_ascii=False).encode('utf-8')
-        
-        r = requests.post(FISH_TTS_URL, headers=headers, data=json_data,
-                          stream=True, timeout=60)
+        # 3) Force le body en UTF-8 (empêche requests de tenter Latin-1)
+        json_bytes = json.dumps(body, ensure_ascii=False).encode("utf-8")
+
+        r = requests.post(
+            FISH_TTS_URL,
+            headers=headers,
+            data=json_bytes,
+            stream=True,
+            timeout=60,
+        )
         r.raise_for_status()
-        
+
         with open(out_path, "wb") as f:
             for chunk in r.iter_content(chunk_size=8192):
                 if chunk:
                     f.write(chunk)
-                    
+
         return os.path.getsize(out_path) > 1024
     except Exception as e:
         print(f"    ❌ fish.audio échec : {e}")
