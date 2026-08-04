@@ -26,52 +26,52 @@ from video_pipeline.config_video import (
 
 
 def animate_scene(image_path: str, output_path: str, animation: str, duration: float) -> bool:
-    """Applique une animation FFmpeg à une image et produit un clip vidéo."""
-    
-    # Paramètres de base
     fps = VIDEO_FPS
     frames = int(duration * fps)
     
-    # Construction du filtre selon l'animation
+    # On agrandit l'image de 20% pour éviter les bords noirs lors du zoom
+    scale_w = int(VIDEO_WIDTH * 1.25)
+    scale_h = int(VIDEO_HEIGHT * 1.25)
+
     if animation == "zoom_in":
-        # Zoom avant progressif (1.0 → 1.2)
         filter_complex = (
+            f"scale={scale_w}:{scale_h},"
             f"zoompan=z='min(zoom+0.001,1.2)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
             f":d={frames}:s={VIDEO_WIDTH}x{VIDEO_HEIGHT}:fps={fps}"
         )
     elif animation == "zoom_out":
-        # Zoom arrière progressif (1.2 → 1.0)
         filter_complex = (
+            f"scale={scale_w}:{scale_h},"
             f"zoompan=z='if(lte(zoom,1.0),1.2,max(zoom-0.001,1.0))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
             f":d={frames}:s={VIDEO_WIDTH}x{VIDEO_HEIGHT}:fps={fps}"
         )
     elif animation == "pan_left":
-        # Panoramique gauche→droite
         filter_complex = (
+            f"scale={scale_w}:{scale_h},"
             f"zoompan=z='1.2':x='iw/2-(iw/zoom/2)+on*2':y='ih/2-(ih/zoom/2)'"
             f":d={frames}:s={VIDEO_WIDTH}x{VIDEO_HEIGHT}:fps={fps}"
         )
     elif animation == "pan_right":
-        # Panoramique droite→gauche
         filter_complex = (
+            f"scale={scale_w}:{scale_h},"
             f"zoompan=z='1.2':x='iw/2-(iw/zoom/2)-on*2':y='ih/2-(ih/zoom/2)'"
             f":d={frames}:s={VIDEO_WIDTH}x{VIDEO_HEIGHT}:fps={fps}"
         )
     elif animation == "pan_up":
-        # Panoramique bas→haut
         filter_complex = (
+            f"scale={scale_w}:{scale_h},"
             f"zoompan=z='1.2':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)+on*2'"
             f":d={frames}:s={VIDEO_WIDTH}x{VIDEO_HEIGHT}:fps={fps}"
         )
     elif animation == "pan_down":
-        # Panoramique haut→bas
         filter_complex = (
+            f"scale={scale_w}:{scale_h},"
             f"zoompan=z='1.2':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)-on*2'"
             f":d={frames}:s={VIDEO_WIDTH}x{VIDEO_HEIGHT}:fps={fps}"
         )
     else:
-        # Animation par défaut : zoom léger
         filter_complex = (
+            f"scale={scale_w}:{scale_h},"
             f"zoompan=z='min(zoom+0.0005,1.1)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
             f":d={frames}:s={VIDEO_WIDTH}x{VIDEO_HEIGHT}:fps={fps}"
         )
@@ -81,8 +81,7 @@ def animate_scene(image_path: str, output_path: str, animation: str, duration: f
         "-vf", filter_complex,
         "-t", str(duration),
         "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-        "-pix_fmt", "yuv420p",
-        "-y", output_path
+        "-pix_fmt", "yuv420p", "-y", output_path
     ]
     
     try:
@@ -91,7 +90,6 @@ def animate_scene(image_path: str, output_path: str, animation: str, duration: f
     except subprocess.CalledProcessError as e:
         print(f"    ❌ FFmpeg échec : {e.stderr[:300]}")
         return False
-
 
 def main():
     if not os.path.isfile(SCENES_FILE):
