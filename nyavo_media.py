@@ -1005,7 +1005,8 @@ def _apply_logo(img, size=120):
 
 def _clean_keep_stars(t):
     """Nettoie les caractères invisibles MAIS conserve les ** du surlignage."""
-    t = re.sub(r'[\ufeff\u00ad--]', '', t or "")
+    # Les tirets - sont placés en FIN de classe pour éviter l'erreur "bad character range"
+    t = re.sub(r'[‎‏‍‌‬\ufeff\u00ad⁠᠎‪‮⁦⁨⁩-]', '', t or "")
     return ''.join(c for c in t if c.isprintable() or c in '\n\t').strip()
 
 def _truncate(t, max_chars):
