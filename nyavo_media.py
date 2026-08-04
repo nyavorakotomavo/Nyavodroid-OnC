@@ -549,8 +549,14 @@ def image_avec_fallback(prompt: str, gemini_key: str, chemin: str,
     if size is None:
         size = DEFAULT_IMG_SIZE
 
-    # Prompt strict sans texte
-    prompt = clean_text(prompt) + ", high quality, sharp focus, no stretching, no distortion, no text, no letters, no words, no typography"
+    #Nouveau (agressif + explicite)
+‎prompt = clean_text(prompt) + (
+‎    ", high quality, sharp focus, photorealistic, "
+‎    "ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS, NO TYPOGRAPHY, NO CAPTIONS, NO LABELS, NO WATERMARKS, "
+‎    "NO FAKE TEXT, NO GIBBERISH TEXT, NO CODE SNIPPETS, NO UI ELEMENTS WITH TEXT. "
+‎    "If the concept involves language/code/translation, show abstract visual metaphors ONLY (glowing nodes, light beams, flowing data streams, neural networks) — NEVER render any characters or symbols."
+‎)
+‎
     erreurs = []
     tentatives = 0
 
