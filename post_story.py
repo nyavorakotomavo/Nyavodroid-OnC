@@ -15,28 +15,40 @@ def generer_texte_story():
     pilier = random.choices(PILLAR_KEYS, weights=[PILLAR_WEIGHTS[k] for k in PILLAR_KEYS], k=1)[0]
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
     
+    # Détection des sujets à risque (génèrent du texte parasite en IA)
+    TEXT_TRIGGER_WORDS = ["code", "compiler", "traduction", "translation", "language", "langage", 
+                          "database", "sql", "json", "api", "interface", "ui", "screen", "écran",
+                          "llm", "ia", "ai", "model", "modèle", "network", "réseau"]
+    force_pexels = any(word in sujet.lower() for word in TEXT_TRIGGER_WORDS)
+    
     prompt = (
         "Tu es Nyavodroid, expert fact-checker. Contenu 100% vérifié obligatoire.\n\n"
         "ÉTAPE 1 — Génère une anecdote factuelle sur le sujet.\n"
         "ÉTAPE 2 — Auto-vérification (3 questions) :\n"
         "  Q1: Source réelle et accessible ?\n"
         "  Q2: Chiffres/années cohérents avec la réalité ?\n"
-        "  Q3: image_prompt techniquement exact ? (NoSQL≠JSON, HTTP/3≠TCP, CDN≠serveur unique)\n"
+        "  Q3: image_prompt techniquement exact ET sans aucun texte ?\n"
+        "       (NoSQL≠JSON, HTTP/3≠TCP, CDN≠serveur unique, ZÉRO caractères dans l'image)\n"
         "ÉTAPE 3 — Corrige si nécessaire avant de répondre.\n\n"
         "RÈGLES STRICTES :\n"
         "- Jamais de chiffre inventé. Année ≤ 2024.\n"
         "- Source obligatoire : organisme réel + année ≤ 2024.\n"
-        "- image_prompt EN ANGLAIS : scène visuelle concrète, techniquement exacte, sans texte.\n"
-        "- Si non vérifiable : {\"erreur\": \"fait non vérifiable\"}.\n\n"
+        '- image_prompt EN ANGLAIS. CRITICAL: absolutely zero text, letters, words, numbers, or typography in the image. '
+        'If the subject involves code, translation, or data, use ONLY abstract visual metaphors (glowing neural networks, light streams, geometric shapes). '
+        'NEVER generate fake text, gibberish, or UI elements with characters.\n'
+        '- Si non vérifiable : {"erreur": "fait non vérifiable"}.\n\n'
         "Réponds EXACTEMENT en JSON :\n"
         '{"texte": "anecdote FACTUELLE 2 phrases (25-35 mots) avec 2-3 mots clés entre **", '
         '"visuel": "concret ou conceptuel", '
-        '"image_prompt": "EN ANGLAIS, scène techniquement exacte liée aux mots-clés, sans texte", '
+        '"image_prompt": "EN ANGLAIS, scène techniquement exacte, ZÉRO texte, métaphores abstraites si tech", '
         '"source": "organisme réel + année ≤ 2024"}\n\n'
         f"Sujet : {sujet}."
     )
     
     print(f"  📝 Génération story (avec auto-vérification)...\n     Sujet : {sujet}")
+    if force_pexels:
+        print(f"  ⚠️ Sujet à risque texte détecté → Pexels sera forcé")
+    
     brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, "[story]").strip()
     if brut.startswith("```json"): brut = brut[7:]
     if brut.endswith("```"): brut = brut[:-3]
@@ -47,12 +59,41 @@ def generer_texte_story():
             raise ValueError(d["erreur"])
         fait_choc, consequence = d.get("texte", ""), ""
         source, visuel, image_prompt = d.get("source",""), d.get("visuel","conceptuel"), d.get("image_prompt","")
+        
+        # Force Pexels si sujet à risque, même si l'IA a dit "conceptuel"
+        if force_pexels:
+            visuel = "concret"
+            
     except Exception as e:
         print(f"  ⚠️ Vérification échouée ou JSON invalide : {e}")
         fait_choc, consequence, source = "Fait non vérifiable pour ce sujet.", "", ""
         visuel, image_prompt = "conceptuel", ""
     
     return pilier, sujet, fait_choc, consequence, source, visuel, image_prompt
+
+
+def generer_image_story(pilier, sujet, chemin, visuel, image_prompt):
+    img_prompt = image_prompt or f"abstract visual metaphor for {sujet}, no text"
+    
+    # Double sécurité : même si visuel="conceptuel", on tente Pexels d'abord pour les sujets tech
+    TEXT_TRIGGER_WORDS = ["code", "compiler", "traduction", "translation", "language", "langage", 
+                          "database", "sql", "json", "api", "interface", "ui", "screen", "écran"]
+    if any(word in sujet.lower() for word in TEXT_TRIGGER_WORDS):
+        print(f"  🖼️ [Pexels] Tentative forcée (sujet à risque texte) : {sujet}")
+        if M.get_image_from_pexels(sujet, chemin, size=(STORY_WIDTH, STORY_HEIGHT)):
+            print("  ✅ [Pexels] photo réelle utilisée (texte évité)")
+            return
+    
+    if visuel == "concret":
+        print(f"  🖼️ [Pexels] photo réelle : {sujet}")
+        if M.get_image_from_pexels(sujet, chemin, size=(STORY_WIDTH, STORY_HEIGHT)):
+            print("  ✅ [Pexels] photo réelle utilisée")
+            return
+        print("  ⚠️ [Pexels] échec → IA avec métaphores abstraites")
+    else:
+        print("  🎨 [IA] visuel conceptuel (métaphores abstraites, zéro texte)")
+    
+    M.image_avec_fallback(img_prompt, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
 
 def generer_image_story(pilier, sujet, chemin, visuel, image_prompt):
     img_prompt = image_prompt or f"concept related to {sujet}"
