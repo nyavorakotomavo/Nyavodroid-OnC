@@ -66,24 +66,34 @@ def tts_edge(text: str, out_path: str) -> bool:
 
 
 def concat_audio(paths: list, output: str) -> bool:
-    """Assemble plusieurs .mp3 en un seul (ffmpeg concat demuxer)."""
+    """Assemble plusieurs .mp3 en un seul (ffmpeg concat filter avec ré-encodage)."""
     if not paths:
         return False
-    list_file = output + ".txt"
-    with open(list_file, "w", encoding="utf-8") as f:
-        for p in paths:
-            escaped = p.replace("'", "'\\''")
-            f.write(f"file '{escaped}'\n")
+    
+    # Utilise le filter concat avec ré-encodage pour garantir la compatibilité
+    inputs = []
+    filter_parts = []
+    
+    for i, p in enumerate(paths):
+        inputs.extend(["-i", p])
+        filter_parts.append(f"[{i}:a]")
+    
+    # Concaténation avec ré-encodage en AAC (compatible avec tous les formats)
+    filter_complex = "".join(filter_parts) + f"concat=n={len(paths)}:v=0:a=1[out]"
+    
+    cmd = [
+        "ffmpeg", *inputs,
+        "-filter_complex", filter_complex,
+        "-map", "[out]",
+        "-c:a", "aac", "-b:a", "192k",
+        "-y", output
+    ]
+    
     try:
-        subprocess.run(
-            ["ffmpeg", "-f", "concat", "-safe", "0", "-i", list_file,
-             "-c", "copy", "-y", output],
-            check=True, capture_output=True, text=True
-        )
-        os.remove(list_file)
-        return True
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        return os.path.isfile(output) and os.path.getsize(output) > 1024
     except subprocess.CalledProcessError as e:
-        print(f"    ❌ concat ffmpeg échec : {e.stderr[:400]}")
+        print(f"    ❌ concat ffmpeg échec : {e.stderr[:500]}")
         return False
 
 
