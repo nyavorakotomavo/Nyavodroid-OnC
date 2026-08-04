@@ -11,7 +11,24 @@ from content_config import (
 
 GEMINI_API_KEY = M.clean(os.environ["GEMINI_API_KEY_STORY"])
 STORY_IMAGE_PATH = "story_image.png"
+# Variable globale pour passer le sujet tendance entre choisir_pilier() et generer_*()
+_SUJET_TENDANCE_NANALY: Optional[str] = None
 
+def choisir_pilier() -> str:
+    """Choisit un pilier en priorisant les sujets tendance de NAnaly."""
+    from charger_strategie import charger_strategie
+    strategie = charger_strategie()
+
+    global _SUJET_TENDANCE_NANALY
+    
+    # Si NAnaly a identifié des sujets tendance, on essaie de matcher avec un pilier
+    if strategie.sujets_a_explorer:
+        sujet_tendance = random.choice(strategie.sujets_a_explorer)
+        print(f"  🔥 Sujet tendance NAnaly détecté : {sujet_tendance}")
+        _SUJET_TENDANCE_NANALY = sujet_tendance
+
+    # Fallback : choix pondéré classique
+    return random.choices(PILLAR_KEYS, weights=[PILLAR_WEIGHTS[k] for k in PILLAR_KEYS], k=1)[0]
 def generer_texte_story():
     from charger_strategie import charger_strategie
     strategie = charger_strategie()
