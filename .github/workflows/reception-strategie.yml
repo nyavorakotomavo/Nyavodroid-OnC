@@ -1,72 +1,42 @@
-name: Réception et application de la stratégie
+name: Cerveau NAnaly
 
 on:
   repository_dispatch:
     types:
       - nouvelle_strategie
   schedule:
-    - cron: "0 7 * * *"   # 07h UTC → texte_seul
-    - cron: "0 9 * * *"   # 09h UTC → image_texte
-    - cron: "0 17 * * *"  # 17h UTC → image_texte (ex-Reel)
+    - cron: "0 7 * * *"
+    - cron: "0 9 * * *"
+    - cron: "0 17 * * *"
   workflow_dispatch:
 
 timeout-minutes: 15
 
 jobs:
   application-strategie:
-    name: Appliquer la stratégie de publication
+    name: Appliquer la strategie
     runs-on: ubuntu-latest
-
     steps:
-      - name: 📥 Récupérer le code
+      - name: Recuperer le code
         uses: actions/checkout@v4
 
-      - name: 🐍 Installer Python 3.11
+      - name: Installer Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
 
-      - name: 📦 Installer les dépendances
+      - name: Installer les dependances
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 🎯 Charger et valider la stratégie
-        id: charger_strategie
+      - name: Charger la strategie
         env:
           STRATEGIE_JSON: ${{ toJSON(github.event.client_payload) }}
-        run: |
-          python -c "
-          from charger_strategie import charger_strategie
-          import json, os
-          strategie = charger_strategie()
-          print(f'✅ Stratégie chargée : {strategie.source}')
-          print(f'   Heure optimale : {strategie.meilleure_heure}')
-          print(f'   Format : {strategie.format_prefere}')
-          print(f'   Mots-clés : {len(strategie.mots_cles_tendance)}')
-          print(f'   Sujets : {len(strategie.sujets_a_explorer)}')
-          # Export pour les étapes suivantes
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f'source={strategie.source}\n')
-          "
+        run: python -c "from charger_strategie import charger_strategie; s = charger_strategie(); print(f'OK: {s.source}')"
 
-      - name:  Déterminer le script à lancer
-        id: choisir_script
-        run: |
-          HOUR=$(date -u +%H)
-          if [ "$HOUR" -ge 6 ] && [ "$HOUR" -lt 8 ]; then
-            echo "script=post_story.py" >> $GITHUB_OUTPUT
-            echo "📌 Story (06-08h UTC)"
-          elif [ "$HOUR" -ge 8 ] && [ "$HOUR" -lt 12 ]; then
-            echo "script=post_content.py" >> $GITHUB_OUTPUT
-            echo "📌 Content (08-12h UTC)"
-          else
-            echo "script=post_content.py" >> $GITHUB_OUTPUT
-            echo "📌 Content (fallback)"
-          fi
-
-      - name: 🚀 Exécuter le script de publication
+      - name: Lancer la publication
         env:
           STRATEGIE_JSON: ${{ toJSON(github.event.client_payload) }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
@@ -83,22 +53,10 @@ jobs:
           FREEAI_API_KEY: ${{ secrets.FREEAI_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
-          echo "🚀 Lancement de ${{ steps.choisir_script.outputs.script }} avec stratégie NAnaly..."
-          python ${{ steps.choisir_script.outputs.script }}
-        timeout-minutes: 10
-
-      - name: 📊 Résumé de l'exécution
-        if: always()
-        run: |
-          echo "=========================================="
-          echo "RÉSUMÉ DE L'EXÉCUTION"
-          echo "=========================================="
-          echo "Trigger : ${{ github.event_name }}"
-          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
-            echo "📡 Stratégie reçue de : NAnaly"
-            echo "   Event type : ${{ github.event.action }}"
+          HOUR=$(date -u +%H)
+          if [ "$HOUR" -ge 6 ] && [ "$HOUR" -lt 8 ]; then
+            python post_story.py
           else
-            echo "⏰ Exécution fallback (cron)"
+            python post_content.py
           fi
-          echo "Script lancé : ${{ steps.choisir_script.outputs.script }}"
-          echo "=========================================="
+        timeout-minutes: 10
