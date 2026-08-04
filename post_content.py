@@ -11,7 +11,7 @@ import sys
 import time
 import json
 from datetime import datetime, timezone
-
+from typing import Optional 
 import requests
 from PIL import Image, ImageDraw
 
