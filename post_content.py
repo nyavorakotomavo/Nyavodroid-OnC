@@ -57,20 +57,56 @@ def clean_backslash(t: str) -> str:
     return t.replace("\\", "")
 
 def choisir_type_contenu() -> str:
-    # ⚠️ REELS DÉSACTIVÉS temporairement (permissions vidéo Facebook manquantes).
-    # Le format "reel" sera réactivé quand le pipeline vidéo dédié sera prêt.
+    """Décide du format en priorisant la stratégie NAnaly, fallback sur l'heure."""
+    from charger_strategie import charger_strategie
+    strategie = charger_strategie()
+
+    # Priorité 1 : format imposé par NAnaly
+    if strategie.format_prefere:
+        mapping = {
+            "photo": "image_texte",
+            "image_texte": "image_texte",
+            "texte_seul": "texte_seul",
+            "video": "image_texte",  # video → image_texte car Reels désactivés
+            "reel": "image_texte",    # reel → image_texte car désactivé
+            "story": "image_texte",
+            "carousel": "image_texte"
+        }
+        fmt = mapping.get(strategie.format_prefere, "image_texte")
+        print(f"  🎯 Format imposé par NAnaly : {strategie.format_prefere} → {fmt}")
+        return fmt
+
+    # Priorité 2 : fallback horaire (comportement actuel)
     h = datetime.now(timezone.utc).hour
     if 6 <= h < 8:
         return "texte_seul"
     if 8 <= h < 12:
         return "image_texte"
     if 16 <= h < 20:
-        return "image_texte"   # ← était "reel"
+        return "image_texte"
     return random.choices(["image_texte", "texte_seul"], weights=[60, 40], k=1)[0]
 
 
 def choisir_pilier() -> str:
+    """Choisit un pilier en priorisant les sujets tendance de NAnaly."""
+    from charger_strategie import charger_strategie
+    strategie = charger_strategie()
+
+    # Si NAnaly a identifié des sujets tendance, on essaie de matcher avec un pilier
+    if strategie.sujets_a_explorer:
+        sujet_tendance = random.choice(strategie.sujets_a_explorer)
+        print(f"  🔥 Sujet tendance NAnaly détecté : {sujet_tendance}")
+        # On stocke le sujet tendance pour qu'il soit utilisé plus tard
+        # (via une variable globale simple ou un attribut)
+        global _SUJET_TENDANCE_NANALY
+        _SUJET_TENDANCE_NANALY = sujet_tendance
+
+    # Fallback : choix pondéré classique
     return random.choices(PILLAR_KEYS, weights=[PILLAR_WEIGHTS[k] for k in PILLAR_KEYS], k=1)[0]
+
+
+# Variable globale pour passer le sujet tendance entre choisir_pilier() et generer_*()
+_SUJET_TENDANCE_NANALY: Optional[str] = None
 
 
 # ══════════════════════════════════════════════
