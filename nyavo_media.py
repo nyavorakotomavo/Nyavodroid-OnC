@@ -67,8 +67,8 @@ def sanitize_log(text: str) -> str:
 # ──────────────────────────────────────────────
 # Secrets
 # ──────────────────────────────────────────────
-FB_PAGE_ID = clean(os.environ["FB_PAGE_ID"])
-FB_PAGE_ACCESS_TOKEN = clean(os.environ["FB_PAGE_ACCESS_TOKEN"])
+FB_PAGE_ID = clean(os.environ.get("FB_PAGE_ID", ""))
+FB_PAGE_ACCESS_TOKEN = clean(os.environ.get("FB_PAGE_ACCESS_TOKEN", ""))
 MISTRAL_API_KEY = clean(os.environ.get("MISTRAL_API_KEY", ""))
 TOGETHER_API_KEY = clean(os.environ.get("TOGETHER_API_KEY", ""))
 HF_TOKEN = clean(os.environ.get("HF_TOKEN", ""))
