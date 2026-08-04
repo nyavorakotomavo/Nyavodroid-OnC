@@ -56,16 +56,17 @@ def clean_backslash(t: str) -> str:
     """Supprime les backslashes parasites qui pourraient apparaître dans le texte."""
     return t.replace("\\", "")
 
-
 def choisir_type_contenu() -> str:
+    # ⚠️ REELS DÉSACTIVÉS temporairement (permissions vidéo Facebook manquantes).
+    # Le format "reel" sera réactivé quand le pipeline vidéo dédié sera prêt.
     h = datetime.now(timezone.utc).hour
     if 6 <= h < 8:
         return "texte_seul"
     if 8 <= h < 12:
         return "image_texte"
     if 16 <= h < 20:
-        return "reel"
-    return random.choices(["reel", "image_texte", "texte_seul"], weights=[40, 35, 25], k=1)[0]
+        return "image_texte"   # ← était "reel"
+    return random.choices(["image_texte", "texte_seul"], weights=[60, 40], k=1)[0]
 
 
 def choisir_pilier() -> str:
