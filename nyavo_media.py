@@ -549,14 +549,14 @@ def image_avec_fallback(prompt: str, gemini_key: str, chemin: str,
     if size is None:
         size = DEFAULT_IMG_SIZE
 
-    #Nouveau (agressif + explicite)
-prompt = clean_text(prompt) + (
-    ", high quality, sharp focus, photorealistic, "
-    "ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS, NO TYPOGRAPHY, NO CAPTIONS, NO LABELS, NO WATERMARKS, "
-    "NO FAKE TEXT, NO GIBBERISH TEXT, NO CODE SNIPPETS, NO UI ELEMENTS WITH TEXT. "
-    "If the concept involves language/code/translation, show abstract visual metaphors ONLY (glowing nodes, light beams, flowing data streams, neural networks) — NEVER render any characters or symbols."
-)
-
+    # Prompt strict sans texte (renforcé)
+    prompt = clean_text(prompt) + (
+        ", high quality, sharp focus, photorealistic, "
+        "ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS, NO TYPOGRAPHY, NO CAPTIONS, NO LABELS, NO WATERMARKS, "
+        "NO FAKE TEXT, NO GIBBERISH TEXT, NO CODE SNIPPETS, NO UI ELEMENTS WITH TEXT. "
+        "If the concept involves language/code/translation, show abstract visual metaphors ONLY (glowing nodes, light beams, flowing data streams, neural networks) — NEVER render any characters or symbols."
+    )
+    
     erreurs = []
     tentatives = 0
 
@@ -654,6 +654,7 @@ prompt = clean_text(prompt) + (
         erreurs.append(f"Pollinations={e}"); print(f"    ⚠️ Pollinations image : {e}")
 
     raise RuntimeError("Image impossible (tous fournisseurs KO) :\n  " + "\n  ".join(erreurs))
+
 # ══════════════════════════════════════════════
 #  AUDIO — fournisseurs (Free.ai, Replicate, HF)
 # ══════════════════════════════════════════════
