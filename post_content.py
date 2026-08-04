@@ -113,6 +113,12 @@ _SUJET_TENDANCE_NANALY: Optional[str] = None
 #  FORMAT 1 : TEXTE SEUL (fond Pillow)
 # ══════════════════════════════════════════════
 def generer_post_texte_seul(pilier: str) -> (str, str):
+    global _SUJET_TENDANCE_NANALY
+if _SUJET_TENDANCE_NANALY:
+    sujet = _SUJET_TENDANCE_NANALY
+    _SUJET_TENDANCE_NANALY = None  # Reset après utilisation
+    print(f"  🎯 Sujet imposé par NAnaly : {sujet}")
+else:
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
     prompt = (
         "Tu es Nyavodroid. Rédige UNIQUEMENT en français et EXTRÊMEMENT COURT :\n"
@@ -166,8 +172,13 @@ def incruster_texte_hierarchique_post(image_in, contexte, fait_choc, consequence
 
 def publier_image_texte(pilier: str) -> dict:
     label = PILLARS[pilier]["label"]
+    global _SUJET_TENDANCE_NANALY
+if _SUJET_TENDANCE_NANALY:
+    sujet = _SUJET_TENDANCE_NANALY
+    _SUJET_TENDANCE_NANALY = None  # Reset après utilisation
+    print(f"  🎯 Sujet imposé par NAnaly : {sujet}")
+else:
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
-    
     # Détection des sujets à risque (génèrent du texte parasite en IA)
     TEXT_TRIGGER_WORDS = ["code", "compiler", "traduction", "translation", "language", "langage", 
                           "database", "sql", "json", "api", "interface", "ui", "screen", "écran",
