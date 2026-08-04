@@ -123,6 +123,7 @@ def generer_post_texte_seul(pilier: str) -> tuple[str, str]:
     
     prompt = (
         "Tu es Nyavodroid. Rédige UNIQUEMENT en français et EXTRÊMEMENT COURT :\n"
+        "- FORMAT DES NOMBRES : les puissances s'écrivent SANS espaces (ex: 10^30, pas 10 ^ 30). Les unités sont collées au nombre (ex: 30kg, pas 30 kg). Jamais de ^ isolé.\n"
         "1 phrase de contexte + 1 fait choc avec un chiffre, maximum 15 mots.\n"
         f"Sujet : {sujet}. {TON_EDITORIAL}"
     )
@@ -199,6 +200,7 @@ def publier_image_texte(pilier: str) -> dict:
         "ÉTAPE 3 — Corrige si nécessaire avant de répondre.\n\n"
         "RÈGLES :\n"
         "- Jamais de chiffre inventé. Année ≤ 2024.\n"
+        "- FORMAT DES NOMBRES : les puissances s'écrivent SANS espaces (ex: 10^30, pas 10 ^ 30). Les unités sont collées au nombre (ex: 30kg, pas 30 kg). Jamais de ^ isolé.\n"
         "- Source obligatoire : organisme réel + année ≤ 2024.\n"
         '- image_prompt EN ANGLAIS. CRITICAL: absolutely zero text, letters, words, numbers, or typography in the image. '
         'If the subject involves code, translation, or data, use ONLY abstract visual metaphors (glowing neural networks, light streams, geometric shapes). '
