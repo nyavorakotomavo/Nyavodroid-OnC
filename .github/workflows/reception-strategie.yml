@@ -1,113 +1,65 @@
 name: 🧠 Stratégie NAnaly
 
 on:
-  # 1. Déclenchement par NAnaly (le cerveau)
   repository_dispatch:
     types:
       - nouvelle_strategie
-  
-  # 2. Déclenchement automatique (Fallback si NAnaly ne répond pas)
   schedule:
-    - cron: "0 7 * * *"   # 07h UTC → Story
-    - cron: "0 9 * * *"   # 09h UTC → Post
-    - cron: "0 17 * * *"  # 17h UTC → Post (ex-Reel)
-  
-  # 3. Déclenchement manuel pour tests
+    - cron: "0 7 * * *"
+    - cron: "0 9 * * *"
+    - cron: "0 17 * * *"
   workflow_dispatch:
-
-timeout-minutes: 15
 
 jobs:
   application-strategie:
-    name: Appliquer la stratégie de publication
+    name: Appliquer la stratégie
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
-      - name: 📥 Récupérer le code
+      - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: 🐍 Installer Python 3.11
+      - name: 🐍 Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
 
-      - name: 📦 Installer les dépendances
+      - name: 📦 Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 🎯 Charger et valider la stratégie
-        id: charger_strategie
+      - name: 🎯 Charger stratégie
         env:
-          # Si déclenché par NAnaly, on récupère le payload JSON
-          # Sinon (cron), la variable sera vide et le script utilisera les valeurs par défaut
           STRATEGIE_JSON: ${{ toJSON(github.event.client_payload) }}
         run: |
           python -c "
+          import os, json
           from charger_strategie import charger_strategie
-          import json, os
-          strategie = charger_strategie()
-          print(f'✅ Stratégie chargée : {strategie.source}')
-          print(f'   Heure optimale : {strategie.meilleure_heure}')
-          print(f'   Format : {strategie.format_prefere}')
-          print(f'   Mots-clés : {len(strategie.mots_cles_tendance)}')
-          print(f'   Sujets : {len(strategie.sujets_a_explorer)}')
+          s = charger_strategie()
+          print(f'✅ Stratégie: {s.source} | Heure: {s.meilleure_heure} | Format: {s.format_prefere}')
           "
 
-      - name: 🕒 Déterminer le script à lancer
-        id: choisir_script
+      - name: 🕒 Choisir script
+        id: script
         run: |
           HOUR=$(date -u +%H)
-          echo "Heure UTC actuelle : $HOUR"
-          
           if [ "$HOUR" -ge 6 ] && [ "$HOUR" -lt 8 ]; then
-            echo "script=post_story.py" >> $GITHUB_OUTPUT
-            echo "📌 Action : Story (06-08h UTC)"
-          elif [ "$HOUR" -ge 8 ] && [ "$HOUR" -lt 12 ]; then
-            echo "script=post_content.py" >> $GITHUB_OUTPUT
-            echo "📌 Action : Post Content (08-12h UTC)"
+            echo "target=post_story.py" >> $GITHUB_OUTPUT
           else
-            echo "script=post_content.py" >> $GITHUB_OUTPUT
-            echo "📌 Action : Post Content (Fallback)"
+            echo "target=post_content.py" >> $GITHUB_OUTPUT
           fi
 
-      - name: 🚀 Exécuter le script de publication
+      - name: 🚀 Exécuter publication
         env:
-          # Injection de la stratégie NAnaly
           STRATEGIE_JSON: ${{ toJSON(github.event.client_payload) }}
-          
-          # Secrets Facebook & IA
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
           GEMINI_API_KEY_CONTENT: ${{ secrets.GEMINI_API_KEY_CONTENT }}
           GEMINI_API_KEY_STORY: ${{ secrets.GEMINI_API_KEY_STORY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-          TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
-          FAL_API_KEY: ${{ secrets.FAL_API_KEY }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          FREEAI_API_KEY: ${{ secrets.FREEAI_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-        run: |
-          echo "🚀 Lancement de ${{ steps.choisir_script.outputs.script }}..."
-          python ${{ steps.choisir_script.outputs.script }}
-        timeout-minutes: 10
-
-      - name: 📊 Résumé de l'exécution
-        if: always()
-        run: |
-          echo "=========================================="
-          echo "RÉSUMÉ DE L'EXÉCUTION"
-          echo "=========================================="
-          echo "Trigger : ${{ github.event_name }}"
-          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
-            echo "📡 Source : NAnaly (Dispatch reçu)"
-            echo "   Event type : ${{ github.event.action }}"
-          else
-            echo "⏰ Source : Cron / Manuel (Fallback)"
-          fi
-          echo "Script lancé : ${{ steps.choisir_script.outputs.script }}"
-          echo "=========================================="
+          # Ajoute les autres secrets si nécessaire
+        run: python ${{ steps.script.outputs.target }}
