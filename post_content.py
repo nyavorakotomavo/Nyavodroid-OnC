@@ -131,6 +131,12 @@ def incruster_texte_hierarchique_post(image_in, contexte, fait_choc, consequence
 def publier_image_texte(pilier: str) -> dict:
     label = PILLARS[pilier]["label"]
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
+    
+    # Détection des sujets à risque (génèrent du texte parasite en IA)
+    TEXT_TRIGGER_WORDS = ["code", "compiler", "traduction", "translation", "language", "langage", 
+                          "database", "sql", "json", "api", "interface", "ui", "screen", "écran",
+                          "llm", "ia", "ai", "model", "modèle", "network", "réseau"]
+    force_pexels = any(word in sujet.lower() for word in TEXT_TRIGGER_WORDS)
 
     prompt = (
         "Tu es Nyavodroid, expert fact-checker. Contenu 100% vérifié obligatoire.\n\n"
@@ -138,24 +144,31 @@ def publier_image_texte(pilier: str) -> dict:
         "ÉTAPE 2 — Auto-vérification (3 questions) :\n"
         "  Q1: Source réelle et accessible ?\n"
         "  Q2: Chiffres/années cohérents avec la réalité ?\n"
-        "  Q3: image_prompt techniquement exact ? (NoSQL≠JSON, HTTP/3TCP, CDN≠serveur unique)\n"
+        "  Q3: image_prompt techniquement exact ET sans aucun texte ?\n"
+        "       (NoSQL≠JSON, HTTP/3≠TCP, CDN≠serveur unique, ZÉRO caractères dans l'image)\n"
         "ÉTAPE 3 — Corrige si nécessaire avant de répondre.\n\n"
         "RÈGLES :\n"
         "- Jamais de chiffre inventé. Année ≤ 2024.\n"
         "- Source obligatoire : organisme réel + année ≤ 2024.\n"
-        "- image_prompt EN ANGLAIS : scène techniquement exacte, sans texte.\n"
-        "- Si non vérifiable : {\"erreur\": \"fait non vérifiable\"}.\n\n"
+        '- image_prompt EN ANGLAIS. CRITICAL: absolutely zero text, letters, words, numbers, or typography in the image. '
+        'If the subject involves code, translation, or data, use ONLY abstract visual metaphors (glowing neural networks, light streams, geometric shapes). '
+        'NEVER generate fake text, gibberish, or UI elements with characters.\n'
+        '- Si non vérifiable : {"erreur": "fait non vérifiable"}.\n\n'
         "Réponds EXACTEMENT en JSON :\n"
         '{"contexte": "1 phrase (10-15 mots)", '
         '"fait_choc": "fait/chiffre surprenant (max 8 mots, mots clés entre **)", '
         '"consequence": "1 phrase courte (10-15 mots)", '
         '"description": "2 phrases développées (30-40 mots)", '
         '"visuel": "concret ou conceptuel", '
-        '"image_prompt": "EN ANGLAIS, scène techniquement exacte, sans texte", '
+        '"image_prompt": "EN ANGLAIS, scène techniquement exacte, ZÉRO texte, métaphores abstraites si tech", '
         '"source": "organisme réel + année ≤ 2024"}\n\n'
         f"Sujet imposé : {sujet}."
     )
+    
     print(f"  📝 Génération post image...\n     Sujet : {sujet}")
+    if force_pexels:
+        print(f"  ⚠️ Sujet à risque texte détecté → Pexels sera forcé")
+    
     brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, "(post json)").strip()
     if brut.startswith("```json"):
         brut = brut[7:]
@@ -169,20 +182,37 @@ def publier_image_texte(pilier: str) -> dict:
         contexte, fait_choc = d.get("contexte", ""), d.get("fait_choc", "")
         consequence, description = d.get("consequence", ""), d.get("description", "")
         source, visuel, image_prompt = d.get("source", ""), d.get("visuel", "conceptuel"), d.get("image_prompt", "")
+        
+        # Force Pexels si sujet à risque, même si l'IA a dit "conceptuel"
+        if force_pexels:
+            visuel = "concret"
+            
     except Exception as e:
         print(f"  ⚠️ Vérification échouée ou JSON invalide : {e}")
         contexte, fait_choc, consequence, description, source = "Fait non vérifiable.", "", "", "", ""
         visuel, image_prompt = "conceptuel", ""
 
-    # ----- Image : réel si concret, IA alignée si conceptuel -----
-    img_prompt = image_prompt or f"concept related to {sujet}"
-    if visuel == "concret":
-        print(f"  🖼️  [Pexels] photo réelle : {sujet}")
+    # ----- Image : réel si concret ou sujet à risque, IA alignée sinon -----
+    img_prompt = image_prompt or f"abstract visual metaphor for {sujet}, no text"
+    
+    # Double sécurité : tentative Pexels forcée pour les sujets tech
+    if any(word in sujet.lower() for word in TEXT_TRIGGER_WORDS):
+        print(f"  🖼️ [Pexels] Tentative forcée (sujet à risque texte) : {sujet}")
+        if M.get_image_from_pexels(sujet, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT)):
+            print("  ✅ [Pexels] photo réelle utilisée (texte évité)")
+        elif visuel == "concret":
+            print("  ⚠️ [Pexels] échec → IA avec métaphores abstraites")
+            M.image_avec_fallback(img_prompt, GEMINI_API_KEY, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT))
+        else:
+            print("  🎨 [IA] visuel conceptuel (métaphores abstraites, zéro texte)")
+            M.image_avec_fallback(img_prompt, GEMINI_API_KEY, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT))
+    elif visuel == "concret":
+        print(f"  🖼️ [Pexels] photo réelle : {sujet}")
         if not M.get_image_from_pexels(sujet, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT)):
-            print("  ⚠️  [Pexels] échec → IA alignée mots-clés")
+            print("  ⚠️ [Pexels] échec → IA avec métaphores abstraites")
             M.image_avec_fallback(img_prompt, GEMINI_API_KEY, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT))
     else:
-        print("  🎨 [IA] visuel conceptuel aligné mots-clés")
+        print("  🎨 [IA] visuel conceptuel (métaphores abstraites, zéro texte)")
         M.image_avec_fallback(img_prompt, GEMINI_API_KEY, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT))
 
     # ----- Incrustation -----
