@@ -3,6 +3,7 @@
 import os, random, sys, json
 import requests
 import nyavo_media as M
+from typing import Optional
 from content_config import (
     PILLAR_KEYS, PILLAR_WEIGHTS, PILLARS, SUJETS_PAR_PILIER,
     STORY_WIDTH, STORY_HEIGHT
