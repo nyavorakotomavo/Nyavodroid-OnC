@@ -1,4 +1,4 @@
-name: Réception et application de la stratégie
+name:Réception et application de la stratégie
 
 on:
   repository_dispatch:
