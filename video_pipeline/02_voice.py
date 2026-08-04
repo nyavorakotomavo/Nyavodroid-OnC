@@ -20,6 +20,13 @@ from video_pipeline.config_video import (
     BASE_DIR, FISH_TTS_URL, FISH_LATENCY, FISH_VOICE_ID, FISH_API_KEY, VOICE_FILE
 )
 
+def _clean_secret(v: str) -> str:
+    """Supprime les caractères invisibles/Unicode parasites d'un secret."""
+    import re
+    return re.sub(
+        r'[‎‏‍‌‬‪-‮⁦-⁩  ]',
+        '', v or ""
+    ).strip()
 
 def get_audio_duration(path: str) -> float:
     """Retourne la durée en secondes d'un fichier audio (ffprobe)."""
