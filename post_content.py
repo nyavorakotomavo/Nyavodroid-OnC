@@ -112,14 +112,15 @@ _SUJET_TENDANCE_NANALY: Optional[str] = None
 # ══════════════════════════════════════════════
 #  FORMAT 1 : TEXTE SEUL (fond Pillow)
 # ══════════════════════════════════════════════
-def generer_post_texte_seul(pilier: str) -> (str, str):
+def generer_post_texte_seul(pilier: str) -> tuple[str, str]:
     global _SUJET_TENDANCE_NANALY
-if _SUJET_TENDANCE_NANALY:
-    sujet = _SUJET_TENDANCE_NANALY
-    _SUJET_TENDANCE_NANALY = None  # Reset après utilisation
-    print(f"  🎯 Sujet imposé par NAnaly : {sujet}")
-else:
-    sujet = random.choice(SUJETS_PAR_PILIER[pilier])
+    if _SUJET_TENDANCE_NANALY:
+        sujet = _SUJET_TENDANCE_NANALY
+        _SUJET_TENDANCE_NANALY = None  # Reset après utilisation
+        print(f"  🎯 Sujet imposé par NAnaly : {sujet}")
+    else:
+        sujet = random.choice(SUJETS_PAR_PILIER[pilier])
+    
     prompt = (
         "Tu es Nyavodroid. Rédige UNIQUEMENT en français et EXTRÊMEMENT COURT :\n"
         "1 phrase de contexte + 1 fait choc avec un chiffre, maximum 15 mots.\n"
@@ -132,7 +133,7 @@ else:
     print(f"  ✅ Texte : « {texte} »")
 
     chemin_image = "post_text_image.png"
-    M.generer_fond_texte_seul(texte, chemin_image)   # fond violet avec le texte centré
+    M.generer_fond_texte_seul(texte, chemin_image)
     return texte, chemin_image
 
 
