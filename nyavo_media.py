@@ -1002,16 +1002,23 @@ def _clean_keep_stars(t):
     return ''.join(c for c in t if c.isprintable() or c in '\n\t').strip()
 
 def _truncate(t, max_chars):
-    """Coupe proprement un texte trop long (garde-fou anti-pavé)."""
-    t = t.strip()
+    """Coupe à la dernière phrase complète qui tient. Jamais de '…' ni de coupe en plein mot."""
+    t = (t or "").strip()
     if t.count("**") % 2 == 1:
         t = t.replace("**", "")
     if len(t) <= max_chars:
         return t
-    cut = t[:max_chars].rsplit(" ", 1)[0].rstrip(".,;:!?")
-    if cut.count("**") % 2 == 1:
-        cut = cut.replace("**", "")
-    return cut + "…"
+    phrases = re.split(r'(?<=[.!?])\s+', t)
+    out = ""
+    for ph in phrases:
+        cand = (out + " " + ph).strip() if out else ph
+        if len(cand) <= max_chars:
+            out = cand
+        else:
+            break
+    if not out:  # 1re phrase trop longue : coupe au dernier mot (rare, le prompt calibre avant)
+        out = t[:max_chars].rsplit(" ", 1)[0].rstrip(".,;:!?")
+    return out
 
 def incruster_texte_pillow(image_in, contexte, fait_choc, consequence, source,
                            image_out, target_size):
