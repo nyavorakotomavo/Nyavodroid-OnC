@@ -3,9 +3,6 @@
 Phase 2 — Génération voix off via Edge TTS (gratuit, illimité).
 Entrée  : narration.txt
 Sortie  : voice.mp3 + phrase_times.json (timestamps exacts sans Whisper)
-
-Stratégie : on génère CHAQUE phrase séparément → on connaît sa durée exacte
-           (ffprobe) → les timestamps sont 100 % fiables et synchronisés.
 """
 import asyncio
 import json
@@ -18,17 +15,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from video_pipeline.config_video import BASE_DIR, VOICE_FILE
 
-# Voix Edge TTS française (masculine, naturelle)
 EDGE_VOICE = "fr-FR-HenriNeural"
 
-# Caractères invisibles à supprimer
 _INVISIBLE = _re.compile(
     "[\u200e\u200f\u200b\u200c\u200d\ufeff\u00ad\u2060\u180e\u202a-\u202e\u2066-\u2069]"
 )
 
 
 def get_audio_duration(path: str) -> float:
-    """Retourne la durée en secondes d'un fichier audio (ffprobe)."""
     try:
         cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration",
                "-of", "csv=p=0", path]
@@ -40,18 +34,12 @@ def get_audio_duration(path: str) -> float:
 
 
 async def _tts_edge_async(text: str, out_path: str) -> bool:
-    """TTS via Edge TTS (gratuit, illimité, français haute qualité)."""
     try:
         import edge_tts
-        
-        # Nettoyage du texte (caractères invisibles)
         text_clean = _INVISIBLE.sub("", text or "")
         text_clean = "".join(c for c in text_clean if c.isprintable() or c in " \n\t").strip()
-        
         if not text_clean:
-            print("    ❌ Texte vide après nettoyage")
             return False
-        
         communicate = edge_tts.Communicate(text_clean, EDGE_VOICE)
         await communicate.save(out_path)
         return os.path.isfile(out_path) and os.path.getsize(out_path) > 1024
@@ -61,40 +49,51 @@ async def _tts_edge_async(text: str, out_path: str) -> bool:
 
 
 def tts_edge(text: str, out_path: str) -> bool:
-    """Wrapper synchrone pour Edge TTS."""
     return asyncio.run(_tts_edge_async(text, out_path))
 
 
+def _run_ffmpeg(cmd: list) -> tuple:
+    """Exécute ffmpeg et retourne (ok, stderr_complet)."""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        return (r.returncode == 0), r.stderr
+    except Exception as e:
+        return False, str(e)
+
+
 def concat_audio(paths: list, output: str) -> bool:
-    """Assemble plusieurs .mp3 en un seul (ffmpeg concat filter avec ré-encodage)."""
+    """
+    Jonction de MP3. Méthode 1 : concat protocol (binaire, sans ré-encodage).
+    Méthode 2 (fallback) : concat filter normalisé + libmp3lame.
+    """
     if not paths:
         return False
-    
-    # Utilise le filter concat avec ré-encodage pour garantir la compatibilité
-    inputs = []
-    filter_parts = []
-    
+
+    # ── Méthode 1 : concat protocol (la plus fiable pour MP3) ──
+    concat_str = "concat:" + "|".join(paths)
+    ok, err = _run_ffmpeg(["ffmpeg", "-i", concat_str, "-c", "copy", "-y", output])
+    if ok and os.path.isfile(output) and os.path.getsize(output) > 1024:
+        print("    ✅ Concat via protocol (copy)")
+        return True
+    print(f"    ⚠️ concat protocol échec, tentative fallback...\n{err[-800:]}")
+
+    # ── Méthode 2 : concat filter normalisé + encodeur MP3 ──
+    inputs, parts = [], []
     for i, p in enumerate(paths):
-        inputs.extend(["-i", p])
-        filter_parts.append(f"[{i}:a]")
-    
-    # Concaténation avec ré-encodage en AAC (compatible avec tous les formats)
-    filter_complex = "".join(filter_parts) + f"concat=n={len(paths)}:v=0:a=1[out]"
-    
-    cmd = [
-        "ffmpeg", *inputs,
-        "-filter_complex", filter_complex,
-        "-map", "[out]",
-        "-c:a", "aac", "-b:a", "192k",
-        "-y", output
-    ]
-    
-    try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        return os.path.isfile(output) and os.path.getsize(output) > 1024
-    except subprocess.CalledProcessError as e:
-        print(f"    ❌ concat ffmpeg échec : {e.stderr[:500]}")
-        return False
+        inputs += ["-i", p]
+        parts.append(f"[{i}:a]aformat=sample_rates=24000:channel_layouts=mono[a{i}]")
+    parts.append("".join(f"[a{i}]" for i in range(len(paths))) +
+                 f"concat=n={len(paths)}:v=0:a=1[out]")
+    cmd = ["ffmpeg", *inputs, "-filter_complex", ";".join(parts),
+           "-map", "[out]", "-c:a", "libmp3lame", "-q:a", "4", "-y", output]
+    ok, err = _run_ffmpeg(cmd)
+    if ok and os.path.isfile(output) and os.path.getsize(output) > 1024:
+        print("    ✅ Concat via filter (libmp3lame)")
+        return True
+
+    # Affiche le VRAI message d'erreur pour diagnostic
+    print(f"    ❌ concat échec définitif :\n{err[-1500:]}")
+    return False
 
 
 def main():
@@ -110,25 +109,18 @@ def main():
     phrases_dir = os.path.join(BASE_DIR, "phrases")
     os.makedirs(phrases_dir, exist_ok=True)
 
-    timings = []
-    audio_files = []
-    t_cursor = 0.0
+    timings, audio_files, t_cursor = [], [], 0.0
 
     for i, phrase in enumerate(phrases, 1):
         audio_path = os.path.join(phrases_dir, f"phrase_{i:03d}.mp3")
         print(f"  🎙️  Phrase {i}/{len(phrases)}...")
-        ok = tts_edge(phrase, audio_path)
-        if not ok:
-            print(f"    ⚠️  Phrase {i} sautée (TTS échoué)")
+        if not tts_edge(phrase, audio_path):
+            print(f"    ⚠️  Phrase {i} sautée")
             continue
-
         duration = get_audio_duration(audio_path)
         timings.append({
-            "index": i,
-            "text": phrase,
-            "file": audio_path,
-            "start": round(t_cursor, 2),
-            "end": round(t_cursor + duration, 2),
+            "index": i, "text": phrase, "file": audio_path,
+            "start": round(t_cursor, 2), "end": round(t_cursor + duration, 2),
             "duration": round(duration, 2),
         })
         audio_files.append(audio_path)
@@ -145,10 +137,8 @@ def main():
 
     times_path = os.path.join(BASE_DIR, "phrase_times.json")
     with open(times_path, "w", encoding="utf-8") as f:
-        json.dump({
-            "total_duration": round(t_cursor, 2),
-            "phrases": timings,
-        }, f, indent=2, ensure_ascii=False)
+        json.dump({"total_duration": round(t_cursor, 2), "phrases": timings},
+                  f, indent=2, ensure_ascii=False)
 
     print(f"  ✅ Voice : {os.path.getsize(VOICE_FILE):,} octets, durée {t_cursor:.1f}s")
     print(f"  ✅ Timings → {times_path}")
