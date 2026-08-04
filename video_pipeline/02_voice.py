@@ -9,6 +9,7 @@ Stratégie : on génère CHAQUE phrase séparément → on connaît sa durée ex
 """
 import json
 import os
+import re as _re
 import subprocess
 import sys
 
@@ -20,14 +21,19 @@ from video_pipeline.config_video import (
     BASE_DIR, FISH_TTS_URL, FISH_LATENCY, FISH_VOICE_ID, FISH_API_KEY, VOICE_FILE
 )
 
-def _clean_secret(v: str) -> str:
-    """Supprime les caractères invisibles/Unicode parasites d'un secret."""
-    import re
-    return re.sub(
-        r'[‎‏‍‌‬‪-‮⁦-⁩  ]',
-        '', v or ""
-    ).strip()
 
+# ──────────────────────────────────────────────
+#  Caractères invisibles/Unicode parasites
+#  (regex explicite, aucun caractère caché dans le code)
+# ──────────────────────────────────────────────
+_INVISIBLE = _re.compile(
+    "[‎‏‍‌‬‪-‮⁦-⁩]"
+)
+
+
+# ──────────────────────────────────────────────
+#  Helpers
+# ──────────────────────────────────────────────
 def get_audio_duration(path: str) -> float:
     """Retourne la durée en secondes d'un fichier audio (ffprobe)."""
     try:
@@ -39,19 +45,19 @@ def get_audio_duration(path: str) -> float:
         print(f"    ⚠️ ffprobe échec pour {path} : {e}")
         return 0.0
 
-def tts_fish_audio(text: str, out_path: str) -> bool:
-    """Appelle fish.audio /v1/tts et sauvegarde l'audio (clé + texte nettoyés, UTF-8 forcé)."""
-    import json
 
+def tts_fish_audio(text: str, out_path: str) -> bool:
+    """Appelle fish.audio /v1/tts (clé + texte nettoyés, UTF-8 forcé). Autonome."""
     if not FISH_API_KEY:
         print("    ❌ FISH_API_KEY absente")
         return False
 
-    # 1) Nettoie la CLÉ (le \u200e collé à la clé cassait le header Latin-1)
-    key = _clean_secret(FISH_API_KEY)
+    # 1) Nettoie la CLÉ (retire le \u200e qui cassait le header Latin-1)
+    key = _INVISIBLE.sub("", FISH_API_KEY or "").strip()
 
     # 2) Nettoie le TEXTE (caractères invisibles du LLM)
-    text_clean = _clean_speech_text(text)
+    text_clean = _INVISIBLE.sub("", text or "")
+    text_clean = "".join(c for c in text_clean if c.isprintable() or c in " \n\t").strip()
     if not text_clean:
         print("    ❌ Texte vide après nettoyage")
         return False
@@ -96,7 +102,6 @@ def concat_audio(paths: list, output: str) -> bool:
     list_file = output + ".txt"
     with open(list_file, "w", encoding="utf-8") as f:
         for p in paths:
-            # Échapper les single quotes pour ffmpeg
             escaped = p.replace("'", "'\\''")
             f.write(f"file '{escaped}'\n")
     try:
@@ -112,6 +117,9 @@ def concat_audio(paths: list, output: str) -> bool:
         return False
 
 
+# ──────────────────────────────────────────────
+#  Main
+# ──────────────────────────────────────────────
 def main():
     narration_path = os.path.join(BASE_DIR, "narration.txt")
     if not os.path.isfile(narration_path):
@@ -125,7 +133,7 @@ def main():
     phrases_dir = os.path.join(BASE_DIR, "phrases")
     os.makedirs(phrases_dir, exist_ok=True)
 
-    timings = []   # liste de {index, text, file, start, end}
+    timings = []
     audio_files = []
     t_cursor = 0.0
 
@@ -153,13 +161,11 @@ def main():
         print("❌ Aucune phrase générée.")
         sys.exit(1)
 
-    # Assemblage final
     print(f"  🔗 Assemblage → {VOICE_FILE}")
     if not concat_audio(audio_files, VOICE_FILE):
         print("❌ Concat final échoué")
         sys.exit(1)
 
-    # Sauvegarde des timings
     times_path = os.path.join(BASE_DIR, "phrase_times.json")
     with open(times_path, "w", encoding="utf-8") as f:
         json.dump({
