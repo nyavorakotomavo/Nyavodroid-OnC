@@ -1,44 +1,83 @@
-name: Cerveau NAnaly
+name: 🧠 Stratégie NAnaly
 
 on:
+  # 1. Déclenchement par NAnaly (le cerveau)
   repository_dispatch:
     types:
       - nouvelle_strategie
+  
+  # 2. Déclenchement automatique (Fallback si NAnaly ne répond pas)
   schedule:
-    - cron: "0 7 * * *"
-    - cron: "0 9 * * *"
-    - cron: "0 17 * * *"
+    - cron: "0 7 * * *"   # 07h UTC → Story
+    - cron: "0 9 * * *"   # 09h UTC → Post
+    - cron: "0 17 * * *"  # 17h UTC → Post (ex-Reel)
+  
+  # 3. Déclenchement manuel pour tests
   workflow_dispatch:
 
 timeout-minutes: 15
 
 jobs:
   application-strategie:
-    name: Appliquer la strategie
+    name: Appliquer la stratégie de publication
     runs-on: ubuntu-latest
+
     steps:
-      - name: Recuperer le code
+      - name: 📥 Récupérer le code
         uses: actions/checkout@v4
 
-      - name: Installer Python
+      - name: 🐍 Installer Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Installer les dependances
+      - name: 📦 Installer les dépendances
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Charger la strategie
+      - name: 🎯 Charger et valider la stratégie
+        id: charger_strategie
         env:
+          # Si déclenché par NAnaly, on récupère le payload JSON
+          # Sinon (cron), la variable sera vide et le script utilisera les valeurs par défaut
           STRATEGIE_JSON: ${{ toJSON(github.event.client_payload) }}
-        run: python -c "from charger_strategie import charger_strategie; s = charger_strategie(); print(f'OK: {s.source}')"
+        run: |
+          python -c "
+          from charger_strategie import charger_strategie
+          import json, os
+          strategie = charger_strategie()
+          print(f'✅ Stratégie chargée : {strategie.source}')
+          print(f'   Heure optimale : {strategie.meilleure_heure}')
+          print(f'   Format : {strategie.format_prefere}')
+          print(f'   Mots-clés : {len(strategie.mots_cles_tendance)}')
+          print(f'   Sujets : {len(strategie.sujets_a_explorer)}')
+          "
 
-      - name: Lancer la publication
+      - name: 🕒 Déterminer le script à lancer
+        id: choisir_script
+        run: |
+          HOUR=$(date -u +%H)
+          echo "Heure UTC actuelle : $HOUR"
+          
+          if [ "$HOUR" -ge 6 ] && [ "$HOUR" -lt 8 ]; then
+            echo "script=post_story.py" >> $GITHUB_OUTPUT
+            echo "📌 Action : Story (06-08h UTC)"
+          elif [ "$HOUR" -ge 8 ] && [ "$HOUR" -lt 12 ]; then
+            echo "script=post_content.py" >> $GITHUB_OUTPUT
+            echo "📌 Action : Post Content (08-12h UTC)"
+          else
+            echo "script=post_content.py" >> $GITHUB_OUTPUT
+            echo "📌 Action : Post Content (Fallback)"
+          fi
+
+      - name: 🚀 Exécuter le script de publication
         env:
+          # Injection de la stratégie NAnaly
           STRATEGIE_JSON: ${{ toJSON(github.event.client_payload) }}
+          
+          # Secrets Facebook & IA
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
           GEMINI_API_KEY_CONTENT: ${{ secrets.GEMINI_API_KEY_CONTENT }}
@@ -53,10 +92,22 @@ jobs:
           FREEAI_API_KEY: ${{ secrets.FREEAI_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
-          HOUR=$(date -u +%H)
-          if [ "$HOUR" -ge 6 ] && [ "$HOUR" -lt 8 ]; then
-            python post_story.py
-          else
-            python post_content.py
-          fi
+          echo "🚀 Lancement de ${{ steps.choisir_script.outputs.script }}..."
+          python ${{ steps.choisir_script.outputs.script }}
         timeout-minutes: 10
+
+      - name: 📊 Résumé de l'exécution
+        if: always()
+        run: |
+          echo "=========================================="
+          echo "RÉSUMÉ DE L'EXÉCUTION"
+          echo "=========================================="
+          echo "Trigger : ${{ github.event_name }}"
+          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+            echo "📡 Source : NAnaly (Dispatch reçu)"
+            echo "   Event type : ${{ github.event.action }}"
+          else
+            echo "⏰ Source : Cron / Manuel (Fallback)"
+          fi
+          echo "Script lancé : ${{ steps.choisir_script.outputs.script }}"
+          echo "=========================================="
