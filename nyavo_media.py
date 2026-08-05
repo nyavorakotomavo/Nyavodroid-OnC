@@ -78,7 +78,28 @@ CLOUDFLARE_ACCOUNT_ID = clean(os.environ.get("CLOUDFLARE_ACCOUNT_ID", ""))
 CLOUDFLARE_API_TOKEN = clean(os.environ.get("CLOUDFLARE_API_TOKEN", ""))
 FREEAI_API_KEY = clean(os.environ.get("FREEAI_API_KEY", ""))
 PEXELS_API_KEY = clean(os.environ.get("PEXELS_API_KEY", ""))
+# ──────────────────────────────────────────────
+# Cloudflare multi-comptes (round-robin + fallback)
+# ──────────────────────────────────────────────
+CLOUDFLARE_CREDS = []
 
+# Compte principal
+if CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN:
+    CLOUDFLARE_CREDS.append((CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN))
+
+# Compte 2 (fallback)
+cf_acc_2 = clean(os.environ.get("CLOUDFLARE_ACCOUNT_ID_2", ""))
+cf_tok_2 = clean(os.environ.get("CLOUDFLARE_API_TOKEN_2", ""))
+if cf_acc_2 and cf_tok_2:
+    CLOUDFLARE_CREDS.append((cf_acc_2, cf_tok_2))
+
+# Compte 3 (fallback)
+cf_acc_3 = clean(os.environ.get("CLOUDFLARE_ACCOUNT_ID_3", ""))
+cf_tok_3 = clean(os.environ.get("CLOUDFLARE_API_TOKEN_3", ""))
+if cf_acc_3 and cf_tok_3:
+    CLOUDFLARE_CREDS.append((cf_acc_3, cf_tok_3))
+
+# Index round-robin pour alterner
 # ──────────────────────────────────────────────
 # Constantes
 # ──────────────────────────────────────────────
