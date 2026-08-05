@@ -171,102 +171,88 @@ def incruster_texte_hierarchique_post(image_in, contexte, fait_choc, consequence
                              image_out, target_size=(POST_WIDTH, POST_HEIGHT))
     # Watermark profil + expression uniquement (la source est déjà rendue par Pillow)
     M.overlay_watermark(image_out, image_out, source_text="")
-
 def publier_image_texte(pilier: str) -> dict:
+    """Publication Image+Texte avec vérification factuelle Zero Trust."""
+    import fact_checker as FC  # Import local pour éviter erreur si fichier absent
+    
     label = PILLARS[pilier]["label"]
-    global _SUJET_TENDANCE_NANALY
+    sujet = random.choice(SUJETS_PAR_PILIER[pilier])
     
-    if _SUJET_TENDANCE_NANALY:
-        sujet = _SUJET_TENDANCE_NANALY
-        _SUJET_TENDANCE_NANALY = None  # Reset après utilisation
-        print(f"  🎯 Sujet imposé par NAnaly : {sujet}")
-    else:
-        sujet = random.choice(SUJETS_PAR_PILIER[pilier])
+    # ═════════════════════════════════════════
+    # ÉTAPE 1 : VÉRIFICATION FACTUELLE OBLIGATOIRE
+    # ══════════════════════════════════════════
+    verification = FC.verify_topic(sujet)
     
-    # Détection des sujets à risque (génèrent du texte parasite en IA)
-    TEXT_TRIGGER_WORDS = ["code", "compiler", "traduction", "translation", "language", "langage", 
-                          "database", "sql", "json", "api", "interface", "ui", "screen", "écran",
-                          "llm", "ia", "ai", "model", "modèle", "network", "réseau"]
-    force_pexels = any(word in sujet.lower() for word in TEXT_TRIGGER_WORDS)
+    if not verification.is_valid:
+        print(f"\n🛑 [FAIL-SAFE] Publication annulée pour '{sujet}'.")
+        print(f"   Raison : {verification.error_reason}")
+        print("💡 Nyavodroid préfère ne rien publier plutôt qu'une fake news.")
+        sys.exit(0)  # Arrêt propre du script
 
+    # ══════════════════════════════════════════
+    # ÉTAPE 2 : GÉNÉRATION À PARTIR DE FAITS VÉRIFIÉS
+    # ══════════════════════════════════════════
+    context_verified = "\n".join([
+        f"- {f.statement} (Source: {f.source_name}, {f.date})" 
+        for f in verification.facts
+    ])
+    
     prompt = (
-        "Tu es Nyavodroid, expert fact-checker tech. Tu publies de l'ACTUALITÉ TECH immédiate.\n\n"
-        "RÈGLE D'OR : Le sujet doit être un ÉVÉNEMENT RÉCENT (annonce, mise à jour, faille, record, lancement). "
-        "INTERDIT : faits historiques passés, généralités, 'saviez-vous que'.\n\n"
-        "ÉTAPE 1 — Génère un post d'actu fluide et narratif.\n"
-        "ÉTAPE 2 — Auto-vérification :\n"
-        "  Q1: Est-ce une news récente (2024-2026) ?\n"
-        "  Q2: Source vérifiable ?\n"
-        "  Q3: image_prompt sans texte ?\n\n"
-        "FORMAT DE RÉPONSE (JSON) :\n"
-        "- contexte : L'accroche news (ex: 'Google vient d'annoncer...', 'Une nouvelle faille critique...'). Pas de label 'Contexte'.\n"
-        "- fait_choc : Le chiffre ou détail clé de l'actu (max 10 mots).\n"
-        "- consequence : L'impact immédiat pour les devs/entreprises.\n"
-        "- description : 2 phrases qui expliquent pourquoi c'est important MAINTENANT.\n"
-        "- visuel : concret (photo réelle) ou conceptuel (abstrait).\n"
-        "- image_prompt : EN ANGLAIS. CRITICAL: zero text. Abstract metaphors if tech.\n"
-        "- source : Organisme + Année.\n\n"
-        f"Sujet imposé (doit être traité comme une NEWS) : {sujet}."
+        "Tu es Nyavodroid, rédacteur tech. Synthétise UNIQUEMENT ces faits vérifiés.\n"
+        "INTERDIT d'ajouter la moindre info hors contexte ci-dessous.\n\n"
+        f"FAITS VÉRIFIÉS :\n{context_verified}\n\n"
+        "FORMAT JSON EXACT :\n"
+        '{"contexte": "Accroche news fluide (pas de label)", '
+        '"fait_choc": "Chiffre clé max 10 mots", '
+        '"consequence": "Impact immédiat", '
+        '"description": "2 phrases explicatives", '
+        '"visuel": "concret ou conceptuel", '
+        '"image_prompt": "EN ANGLAIS, zero text, abstract if tech", '
+        '"source": "Organisme + Année"}\n\n'
+        f"Sujet : {sujet}."
     )
 
-    print(f"  📝 Génération post image...\n     Sujet : {sujet}")
-    if force_pexels:
-        print(f"  ⚠️ Sujet à risque texte détecté → Pexels sera forcé")
-
+    print(f"  📝 Génération post image (faits vérifiés)...\n     Sujet : {sujet}")
     brut = M.texte_avec_fallback(prompt, GEMINI_API_KEY, "(post json)").strip()
-    if brut.startswith("```json"):
-        brut = brut[7:]
-    if brut.endswith("```"):
-        brut = brut[:-3]
+    if brut.startswith("```json"): brut = brut[7:]
+    if brut.endswith("```"): brut = brut[:-3]
 
     try:
         d = json.loads(brut)
-        if "erreur" in d:
-            raise ValueError(d["erreur"])
         contexte, fait_choc = d.get("contexte", ""), d.get("fait_choc", "")
         consequence, description = d.get("consequence", ""), d.get("description", "")
         source, visuel, image_prompt = d.get("source", ""), d.get("visuel", "conceptuel"), d.get("image_prompt", "")
-
-        # Force Pexels si sujet à risque, même si l'IA a dit "conceptuel"
-        if force_pexels:
-            visuel = "concret"
-
     except Exception as e:
-        print(f"  ⚠️ Vérification échouée ou JSON invalide : {e}")
-        contexte, fait_choc, consequence, description, source = "Fait non vérifiable.", "", "", "", ""
-        visuel, image_prompt = "conceptuel", ""
+        print(f"  ️ JSON invalide malgré faits vérifiés : {e}")
+        sys.exit(0)
 
-    # ----- Image : réel si concret ou sujet à risque, IA alignée sinon -----
+    # ══════════════════════════════════════════
+    # ÉTAPE 3 : IMAGE (Pexels/IA anti-texte)
+    # ══════════════════════════════════════════
+    TEXT_TRIGGER_WORDS = ["code", "compiler", "traduction", "translation", "language", "langage", 
+                          "database", "sql", "json", "api", "interface", "ui", "screen", "écran"]
+    force_pexels = any(word in sujet.lower() for word in TEXT_TRIGGER_WORDS)
     img_prompt = image_prompt or f"abstract visual metaphor for {sujet}, no text"
 
-    # Double sécurité : tentative Pexels forcée pour les sujets tech
-    if any(word in sujet.lower() for word in TEXT_TRIGGER_WORDS):
-        print(f"  🖼️ [Pexels] Tentative forcée (sujet à risque texte) : {sujet}")
-        if M.get_image_from_pexels(sujet, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT)):
-            print("  ✅ [Pexels] photo réelle utilisée (texte évité)")
-        elif visuel == "concret":
-            print("  ⚠️ [Pexels] échec → IA avec métaphores abstraites")
-            M.image_avec_fallback(img_prompt, GEMINI_API_KEY, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT))
-        else:
-            print("  🎨 [IA] visuel conceptuel (métaphores abstraites, zéro texte)")
+    if force_pexels:
+        print(f"  🖼️ [Pexels] Forcé (sujet à risque texte)")
+        if not M.get_image_from_pexels(sujet, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT)):
             M.image_avec_fallback(img_prompt, GEMINI_API_KEY, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT))
     elif visuel == "concret":
-        print(f"  🖼️ [Pexels] photo réelle : {sujet}")
         if not M.get_image_from_pexels(sujet, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT)):
-            print("  ⚠️ [Pexels] échec → IA avec métaphores abstraites")
             M.image_avec_fallback(img_prompt, GEMINI_API_KEY, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT))
     else:
-        print("  🎨 [IA] visuel conceptuel (métaphores abstraites, zéro texte)")
         M.image_avec_fallback(img_prompt, GEMINI_API_KEY, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT))
 
-    # ----- Incrustation -----
+    # ══════════════════════════════════════════
+    # ÉTAPE 4 : INCRUSTATION & LÉGENDE NARRATIVE
+    # ══════════════════════════════════════════
     if fait_choc or consequence:
         incruster_texte_hierarchique_post(IMAGE_PATH, contexte, fait_choc, consequence, source, IMAGE_PATH)
     else:
         M.overlay_watermark(IMAGE_PATH, IMAGE_PATH, source_text="")
 
-    # ----- Légende développée -----
-    legende_finale = f"{contexte}\n\n{fait_choc.replace('**','')}\n\n{description}\n\nSource : {source}\n\n#Nyavodroid"
+    legende_finale = f"{contexte} {fait_choc.replace('**', '')}. {consequence}\n\n{description}\n\nSource : {source}\n\n#Nyavodroid #TechNews"
     print(f"\n📌 Sujet : {sujet}\n📌 Légende :\n{legende_finale}\n")
 
     ep = f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/photos"
@@ -275,15 +261,13 @@ def publier_image_texte(pilier: str) -> dict:
             r = M._req("POST", ep, data={"caption": legende_finale, "access_token": M.FB_PAGE_ACCESS_TOKEN},
                        files={"source": (os.path.basename(IMAGE_PATH), f, "image/png")}, timeout=M.TIMEOUT)
         res = r.json()
-        if "id" not in res:
-            raise ValueError(f"Réponse FB inattendue : {res}")
+        if "id" not in res: raise ValueError(f"Réponse FB inattendue : {res}")
         print(f"  ✅ Image+Texte publié — ID : {res['id']}")
         return res
     except requests.exceptions.HTTPError as e:
         raise M.fb_error(e, "photo + légende") from e
     except OSError as e:
         raise RuntimeError(f"Fichier image illisible : {e}") from e
-
 # ══════════════════════════════════════════════
 #  FORMAT 3 : REEL — génération des phrases
 # ══════════════════════════════════════════════
