@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Phase 7 — Montage final (charte Nyavodroid).
-- Sous-titres GRANDS (58px Bold) sur fenêtres contiguës = durée réelle des clips
-  (plus de clignotement / désynchronisation).
-- Logo rond en haut à gauche.
-- Fallbacks garantis.
+Phase 7 — Montage final premium (charte Nyavodroid).
+- Sous-titres SANS boîtes : contour noir + ombre, police Poppins/DejaVu Bold
+- Animations fade-in/fade-out (0.3s)
+- Safe zone 9:16 (marges pour interface FB/TikTok)
+- Logo rond en haut à gauche
+- Fallbacks garantis
 """
 import json
 import os
@@ -19,6 +20,10 @@ from video_pipeline.config_video import (
 from content_config import PROFILE_IMAGE_PATH
 
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+# Safe zones (marges pour éviter l'interface FB/TikTok)
+SAFE_TOP = 180
+SAFE_BOTTOM = 250
 
 
 def _run(cmd):
@@ -63,17 +68,20 @@ def build_video_filter(subs, has_logo):
     parts, cur = [], "[0:v]"
     if has_logo:
         parts.append("[1:v]scale=120:120,format=rgba[lg]")
-        parts.append(f"{cur}[lg]overlay=40:40[base]")
+        parts.append(f"{cur}[lg]overlay=40:{SAFE_TOP}[base]")
         cur = "[base]"
     for i, (txt, s, e) in enumerate(subs):
         tf = os.path.abspath(os.path.join(BASE_DIR, f"sub_{i}.txt"))
         with open(tf, "w", encoding="utf-8") as f:
             f.write(txt)
         nxt = f"[dt{i}]"
+        # Sous-titres SANS boîtes : contour noir + ombre + fade-in/out
+        alpha_expr = f"if(lt(t-{s:.2f},0.3),(t-{s:.2f})/0.3,if(gt(t,{e:.2f}-0.3),({e:.2f}-t)/0.3,1))"
         parts.append(
             f"{cur}drawtext=fontfile={FONT_BOLD}:textfile='{tf}':fontsize=58:"
-            f"fontcolor=white:borderw=4:bordercolor=black:box=1:boxcolor=black@0.35:boxborderw=18:"
-            f"x=(w-text_w)/2:y=h-text_h-150:enable='between(t,{s:.2f},{e:.2f})'{nxt}")
+            f"fontcolor=white:borderw=5:bordercolor=black:shadowx=3:shadowy=3:shadowcolor=black@0.6:"
+            f"x=(w-text_w)/2:y=h-text_h-{SAFE_BOTTOM}:"
+            f"alpha='{alpha_expr}':enable='between(t,{s:.2f},{e:.2f})'{nxt}")
         cur = nxt
     return ";".join(parts), cur
 
@@ -92,7 +100,6 @@ def main():
         print("❌ Aucun clip — relance 05_animate.py"); sys.exit(1)
     clips = [p for _, p in pairs]
 
-    # Fenêtres contiguës = durée RÉELLE des clips (anti-clignotement)
     subs, t = [], 0.0
     for (s, p) in pairs:
         d = probe_duration(p)
