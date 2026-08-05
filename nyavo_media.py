@@ -412,25 +412,45 @@ def _i_fal(prompt: str, chemin: str) -> None:
 
 
 def _i_cloudflare(prompt: str, chemin: str) -> None:
-    url = f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/{CLOUDFLARE_MODEL}"
-    r = _req(
-        "POST", url,
-        headers={"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}", "Content-Type": "application/json"},
-        json_data={
-            "prompt": prompt,
-            "num_steps": 4,
-            "negative_prompt": "no text, no letters, no numbers, no typography, no watermark, no logo, no captions",
-        },
-        timeout=60,
-    )
-    data = r.json()
-    if not data.get("success"):
-        raise ValueError(f"Cloudflare erreur : {data}")
-    b64 = data.get("result", {}).get("image")
-    if not b64:
-        raise ValueError(f"Cloudflare pas d'image : {data}")
-    with open(chemin, "wb") as f:
-        f.write(base64.b64decode(b64))
+    """Image Cloudflare : round-robin + bascule auto si quota (429)."""
+    global _CF_INDEX
+    if not CLOUDFLARE_CREDS:
+        raise ValueError("Aucun identifiant Cloudflare configuré")
+    n = len(CLOUDFLARE_CREDS)
+    derniere = None
+    for i in range(n):
+        idx = (_CF_INDEX + i) % n
+        acc, tok = CLOUDFLARE_CREDS[idx]
+        url = f"https://api.cloudflare.com/client/v4/accounts/{acc}/ai/run/{CLOUDFLARE_MODEL}"
+        try:
+            r = _req(
+                "POST", url,
+                headers={"Authorization": f"Bearer {tok}", "Content-Type": "application/json"},
+                json_data={
+                    "prompt": prompt,
+                    "num_steps": 4,
+                    "negative_prompt": "no text, no letters, no numbers, no typography, no watermark, no logo, no captions",
+                },
+                timeout=60,
+                max_retries=1,
+            )
+            data = r.json()
+            if not data.get("success"):
+                raise ValueError(f"Cloudflare erreur : {data}")
+            b64 = data.get("result", {}).get("image")
+            if not b64:
+                raise ValueError(f"Cloudflare pas d'image : {data}")
+            with open(chemin, "wb") as f:
+                f.write(base64.b64decode(b64))
+            print(f"    ☁️ Cloudflare compte #{idx + 1}/{n} OK")
+            _CF_INDEX = (idx + 1) % n
+            return
+        except Exception as e:
+            derniere = e
+            print(f"    ⚠️ Cloudflare compte #{idx + 1}/{n} : {sanitize_log(str(e))} → compte suivant")
+            continue
+    _CF_INDEX = (_CF_INDEX + 1) % n
+    raise RuntimeError(f"Cloudflare KO (tous comptes) : {sanitize_log(str(derniere))}")
 
 
 def _i_pollinations(prompt: str, chemin: str) -> None:
