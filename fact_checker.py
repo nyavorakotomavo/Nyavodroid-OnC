@@ -15,8 +15,8 @@ from typing import List, Optional
 # ──────────────────────────────────────────────
 # Configuration & Secrets
 # ──────────────────────────────────────────────
-SERPER_API_KEY = os.environ.get("SERPER_API_KEY", "")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY_CONTENT", "") # Pour le cross-check LLM
+TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY_CONTENT", "")  # Pour extraction LLM
 
 @dataclass
 class VerifiedFact:
@@ -36,40 +36,50 @@ class VerificationResult:
     raw_sources: list = field(default_factory=list)
 
 # ──────────────────────────────────────────────
-# Moteur de Recherche Web (Serper.dev)
-# ─────────────────────────────────────────────
+# Moteur de Recherche Web (Tavily Advanced)
+# ──────────────────────────────────────────────
 def search_web(query: str, num_results: int = 5) -> list:
-    """Recherche web structurée via Serper.dev (optimisé pour l'IA)."""
-    if not SERPER_API_KEY:
-        print("⚠️ SERPER_API_KEY manquante. Mode recherche désactivé.")
+    """Recherche web structurée via Tavily (optimisé pour fact-checking)."""
+    if not TAVILY_API_KEY:
+        print("⚠️ TAVILY_API_KEY manquante. Mode recherche désactivé.")
         return []
     
-    url = "https://google.serper.dev/search"
-    headers = {
-        "X-API-KEY": SERPER_API_KEY,
-        "Content-Type": "application/json"
+    url = "https://api.tavily.com/search"
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "api_key": TAVILY_API_KEY,
+        "query": query,
+        "num_results": num_results,
+        "include_answer": False,
+        "include_raw_content": False,
+        "search_depth": "advanced"  # Plus lent mais beaucoup plus fiable pour les faits
     }
-    payload = json.dumps({"q": query, "num": num_results})
     
     try:
-        r = requests.post(url, headers=headers, data=payload, timeout=10)
+        r = requests.post(url, headers=headers, json=payload, timeout=20)
         r.raise_for_status()
         data = r.json()
         
         results = []
-        for item in data.get("organic", []):
+        for item in data.get("results", []):
+            # Nettoyage du contenu (supprime les URLs, markdown, etc.)
+            content = item.get("content", "")
+            content = re.sub(r'https?://\S+', '', content)  # Supprime les liens
+            content = re.sub(r'\[.*?\]', '', content)       # Supprime les références [1]
+            content = ' '.join(content.split())             # Normalise les espaces
+            
             results.append({
                 "title": item.get("title", ""),
-                "link": item.get("link", ""),
-                "snippet": item.get("snippet", ""),
-                "date": item.get("date", "")
+                "link": item.get("url", ""),
+                "snippet": content[:500],  # Limite à 500 chars pour le prompt
+                "date": item.get("published_date", "")[:10] if item.get("published_date") else ""
             })
         return results
     except Exception as e:
-        print(f"❌ Erreur recherche Serper : {e}")
+        print(f"❌ Erreur recherche Tavily : {e}")
         return []
 
-# ─────────────────────────────────────────────
+# ──────────────────────────────────────────────
 # Extracteur de Faits (LLM comme ANALYSEUR uniquement)
 # ──────────────────────────────────────────────
 def extract_facts_from_sources(sujet: str, sources: list) -> List[VerifiedFact]:
@@ -82,7 +92,7 @@ def extract_facts_from_sources(sujet: str, sources: list) -> List[VerifiedFact]:
 
     context_str = "\n\n".join([
         f"SOURCE [{i+1}] : {s['title']}\nURL: {s['link']}\nDate: {s.get('date', 'N/A')}\nExtrait: {s['snippet']}"
-        for i, s in enumerate(sources[:3]) # Max 3 sources pour le prompt
+        for i, s in enumerate(sources[:4])  # Max 4 sources pour le prompt
     ])
 
     prompt = (
@@ -92,13 +102,14 @@ def extract_facts_from_sources(sujet: str, sources: list) -> List[VerifiedFact]:
         "1. N'ajoute AUCUNE information extérieure aux sources.\n"
         "2. Si une info n'est pas dans les sources, IGNORE-LA.\n"
         "3. Retourne UNIQUEMENT un tableau JSON d'objets avec : statement, source_name, source_url, date, snippet.\n"
-        "4. Le 'statement' doit être une phrase complète et vérifiable.\n\n"
+        "4. Le 'statement' doit être une phrase complète et vérifiable.\n"
+        "5. Ne jamais inventer de dates ou de chiffres.\n\n"
         f"SUJET : {sujet}\n\nSOURCES :\n{context_str}\n\nJSON :"
     )
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={GEMINI_API_KEY}"
     try:
-        r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=15)
+        r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=20)
         data = r.json()
         text = data["candidates"][0]["content"]["parts"][0]["text"]
         
@@ -108,9 +119,11 @@ def extract_facts_from_sources(sujet: str, sources: list) -> List[VerifiedFact]:
         
         facts_data = json.loads(text)
         verified_facts = []
-        for f in facts_data:
+        for f in facts_
             if all(k in f for k in ["statement", "source_name", "source_url"]):
-                verified_facts.append(VerifiedFact(**f))
+                # Validation basique : le statement doit contenir au moins un mot-clé du sujet
+                if any(word.lower() in f["statement"].lower() for word in sujet.split()[:3]):
+                    verified_facts.append(VerifiedFact(**f))
         return verified_facts
     except Exception as e:
         print(f"⚠️ Extraction LLM échouée : {e}")
@@ -127,27 +140,34 @@ def cross_check_facts(facts: List[VerifiedFact], min_sources: int = 2) -> Verifi
     if not facts:
         return VerificationResult(is_valid=False, error_reason="Aucun fait extrait des sources.")
 
-    # Regrouper les faits similaires (simple matching de mots-clés pour v1)
-    # Dans une v2, on utiliserait l'embedding sémantique
+    # Regrouper les faits similaires par similarité de mots-clés
     validated_facts = []
-    rejected_facts = []
-
+    
     for fact in facts:
-        # Compter combien de sources mentionnent ce fait (approximatif via titre/snippet)
-        support_count = 1 # La source originale compte toujours
+        # Compter combien de sources mentionnent des termes similaires
+        support_count = 1  # La source originale compte toujours
         
         # Vérification simple : le statement apparaît-il dans d'autres snippets ?
-        # (Amélioration future : recherche sémantique)
-        validated_facts.append(fact)
+        for other_fact in facts:
+            if other_fact != fact and other_fact.source_url != fact.source_url:
+                # Similarité basique : 3+ mots en commun
+                words_fact = set(fact.statement.lower().split())
+                words_other = set(other_fact.statement.lower().split())
+                common = words_fact & words_other
+                if len(common) >= 3:
+                    support_count += 1
+        
+        # Accepter si au moins 2 sources corroborent
+        if support_count >= min_sources:
+            validated_facts.append(fact)
 
-    # Règle stricte : si aucun fait n'a de consensus fort, on rejette
-    # Pour v1, on accepte si on a au moins 1 fait bien sourcé + 1 autre source corroborante sur le sujet global
-    if len(validated_facts) >= 1 and len(facts) >= min_sources:
+    # Règle stricte : besoin d'au moins 1 fait validé par consensus
+    if len(validated_facts) >= 1:
         return VerificationResult(is_valid=True, facts=validated_facts, raw_sources=facts)
     else:
         return VerificationResult(
             is_valid=False, 
-            error_reason=f"Insuffisance de consensus. {len(validated_facts)} fait(s) trouvé(s), besoin de corroboration.",
+            error_reason=f"Pas de consensus suffisant. {len(validated_facts)} fait(s) validé(s), besoin de {min_sources} sources concordantes.",
             raw_sources=facts
         )
 
