@@ -569,14 +569,13 @@ def image_avec_fallback(prompt: str, gemini_key: str, chemin: str,
     if size is None:
         size = DEFAULT_IMG_SIZE
 
-    # Prompt strict sans texte (renforcé)
     prompt = clean_text(prompt) + (
         ", high quality, sharp focus, photorealistic, "
         "ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS, NO TYPOGRAPHY, NO CAPTIONS, NO LABELS, NO WATERMARKS, "
         "NO FAKE TEXT, NO GIBBERISH TEXT, NO CODE SNIPPETS, NO UI ELEMENTS WITH TEXT. "
-        "If the concept involves language/code/translation, show abstract visual metaphors ONLY (glowing nodes, light beams, flowing data streams, neural networks) — NEVER render any characters or symbols."
+        "If the concept involves language/code/translation, show abstract visual metaphors ONLY "
+        "(glowing nodes, light beams, flowing data streams, neural networks) — NEVER render any characters or symbols."
     )
-    
     erreurs = []
     tentatives = 0
 
@@ -601,8 +600,8 @@ def image_avec_fallback(prompt: str, gemini_key: str, chemin: str,
     except Exception as e:
         erreurs.append(f"Gemini={e}"); print(f"    ⚠️ Gemini image : {e}")
 
-    # 2. Cloudflare (remonté)
-    if CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN:
+    # 2. Cloudflare (multi-comptes round-robin)
+    if CLOUDFLARE_CREDS:
         try:
             tentatives += 1
             print("    🖼️ Cloudflare image (carré → crop)...")
