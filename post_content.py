@@ -166,19 +166,21 @@ def publier_texte_seul(pilier: str) -> dict:
 #  FORMAT 2 : IMAGE + TEXTE (Pexels/IA, hiérarchie Pillow, watermark)
 # ══════════════════════════════════════════════
 def incruster_texte_hierarchique_post(image_in, contexte, fait_choc, consequence, source, image_out):
-    """Incrustation hiérarchique Pillow (post 1080x1350), puis watermark profil+expression."""
+    """Incrustation hiérarchique Pillow (post 1080x1350), puis watermark expression."""
     M.incruster_texte_pillow(image_in, contexte, fait_choc, consequence, source,
                              image_out, target_size=(POST_WIDTH, POST_HEIGHT))
-    # Watermark profil + expression uniquement (la source est déjà rendue par Pillow)
+    # Watermark expression uniquement (logo déjà ajouté par _apply_logo dans incruster_texte_pillow)
     M.overlay_watermark(image_out, image_out, source_text="")
+
+
 def publier_image_texte(pilier: str) -> dict:
-    """Publication Image+Texte avec vérification factuelle Zero Trust."""
-    import fact_checker as FC  # Import local pour éviter erreur si fichier absent
+    """Publication Image+Texte avec vérification factuelle Zero Trust (Tavily)."""
+    import fact_checker as FC
     
     label = PILLARS[pilier]["label"]
     sujet = random.choice(SUJETS_PAR_PILIER[pilier])
     
-    # ═════════════════════════════════════════
+    # ══════════════════════════════════════════
     # ÉTAPE 1 : VÉRIFICATION FACTUELLE OBLIGATOIRE
     # ══════════════════════════════════════════
     verification = FC.verify_topic(sujet)
@@ -223,7 +225,7 @@ def publier_image_texte(pilier: str) -> dict:
         consequence, description = d.get("consequence", ""), d.get("description", "")
         source, visuel, image_prompt = d.get("source", ""), d.get("visuel", "conceptuel"), d.get("image_prompt", "")
     except Exception as e:
-        print(f"  ️ JSON invalide malgré faits vérifiés : {e}")
+        print(f"  ⚠️ JSON invalide malgré faits vérifiés : {e}")
         sys.exit(0)
 
     # ══════════════════════════════════════════
