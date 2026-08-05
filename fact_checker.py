@@ -119,7 +119,7 @@ def extract_facts_from_sources(sujet: str, sources: list) -> List[VerifiedFact]:
         
         facts_data = json.loads(text)
         verified_facts = []
-        for f in facts_
+        for f in facts_data:  # ← CORRECTION ICI (était "facts_")
             if all(k in f for k in ["statement", "source_name", "source_url"]):
                 # Validation basique : le statement doit contenir au moins un mot-clé du sujet
                 if any(word.lower() in f["statement"].lower() for word in sujet.split()[:3]):
