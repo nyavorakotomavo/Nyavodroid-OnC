@@ -433,15 +433,24 @@ def _i_fal(prompt: str, chemin: str) -> None:
 
 
 def _i_cloudflare(prompt: str, chemin: str) -> None:
-    """Image Cloudflare : round-robin + bascule auto si quota (429)."""
-    global _CF_INDEX
-    if not CLOUDFLARE_CREDS:
+    """Image Cloudflare : lit les comptes elle-même + round-robin + bascule si 429."""
+    creds = []
+    for suffix in ("", "_2", "_3"):
+        acc = clean(os.environ.get(f"CLOUDFLARE_ACCOUNT_ID{suffix}", ""))
+        tok = clean(os.environ.get(f"CLOUDFLARE_API_TOKEN{suffix}", ""))
+        if acc and tok:
+            creds.append((acc, tok))
+    if not creds:
         raise ValueError("Aucun identifiant Cloudflare configuré")
-    n = len(CLOUDFLARE_CREDS)
+
+    if not hasattr(_i_cloudflare, "idx"):
+        _i_cloudflare.idx = 0
+    n = len(creds)
     derniere = None
+
     for i in range(n):
-        idx = (_CF_INDEX + i) % n
-        acc, tok = CLOUDFLARE_CREDS[idx]
+        idx = (_i_cloudflare.idx + i) % n
+        acc, tok = creds[idx]
         url = f"https://api.cloudflare.com/client/v4/accounts/{acc}/ai/run/{CLOUDFLARE_MODEL}"
         try:
             r = _req(
@@ -464,15 +473,15 @@ def _i_cloudflare(prompt: str, chemin: str) -> None:
             with open(chemin, "wb") as f:
                 f.write(base64.b64decode(b64))
             print(f"    ☁️ Cloudflare compte #{idx + 1}/{n} OK")
-            _CF_INDEX = (idx + 1) % n
+            _i_cloudflare.idx = (idx + 1) % n
             return
         except Exception as e:
             derniere = e
             print(f"    ⚠️ Cloudflare compte #{idx + 1}/{n} : {sanitize_log(str(e))} → compte suivant")
             continue
-    _CF_INDEX = (_CF_INDEX + 1) % n
-    raise RuntimeError(f"Cloudflare KO (tous comptes) : {sanitize_log(str(derniere))}")
 
+    _i_cloudflare.idx = (_i_cloudflare.idx + 1) % n
+    raise RuntimeError(f"Cloudflare KO (tous comptes) : {sanitize_log(str(derniere))}")
 
 def _i_pollinations(prompt: str, chemin: str) -> None:
     encoded = urllib.parse.quote(prompt, safe='')
