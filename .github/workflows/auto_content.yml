@@ -27,16 +27,27 @@ jobs:
 
       - name: Publier le contenu
         env:
-          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
-          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
-          GEMINI_API_KEY_CONTENT: ${{ secrets.GEMINI_API_KEY_CONTENT }}
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-          TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
-          FAL_API_KEY: ${{ secrets.FAL_API_KEY }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          FREEAI_API_KEY: ${{ secrets.FREEAI_API_KEY }}
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+            # ──────────────────────────────────────────────
+# Secrets
+# ──────────────────────────────────────────────
+FB_PAGE_ID = clean(os.environ.get("FB_PAGE_ID", ""))
+FB_PAGE_ACCESS_TOKEN = clean(os.environ.get("FB_PAGE_ACCESS_TOKEN", ""))
+MISTRAL_API_KEY = clean(os.environ.get("MISTRAL_API_KEY", ""))
+TOGETHER_API_KEY = clean(os.environ.get("TOGETHER_API_KEY", ""))
+HF_TOKEN = clean(os.environ.get("HF_TOKEN", ""))
+REPLICATE_API_TOKEN = clean(os.environ.get("REPLICATE_API_TOKEN", ""))
+FAL_API_KEY = clean(os.environ.get("FAL_API_KEY", ""))
+CLOUDFLARE_ACCOUNT_ID = clean(os.environ.get("CLOUDFLARE_ACCOUNT_ID", ""))
+CLOUDFLARE_API_TOKEN = clean(os.environ.get("CLOUDFLARE_API_TOKEN", ""))
+FREEAI_API_KEY = clean(os.environ.get("FREEAI_API_KEY", ""))
+PEXELS_API_KEY = clean(os.environ.get("PEXELS_API_KEY", ""))
+
+# ── Multi-comptes Cloudflare (répartition de charge anti-quota) ──
+CLOUDFLARE_CREDS = []
+for _suffix in ("", "_2", "_3"):
+    _acc = clean(os.environ.get(f"CLOUDFLARE_ACCOUNT_ID{_suffix}", ""))
+    _tok = clean(os.environ.get(f"CLOUDFLARE_API_TOKEN{_suffix}", ""))
+    if _acc and _tok:
+        CLOUDFLARE_CREDS.append((_acc, _tok))
+_CF_INDEX = 0
         run: python post_content.py
