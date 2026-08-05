@@ -1,108 +1,119 @@
 #!/usr/bin/env python3
 """
-Phase 1 — Générateur de narration.
-Entrée  : sujet + pilier (choisis via content_config)
-Sortie  : narration.txt + metadata.json (title, duration_target, style)
-
-Réutilise M.texte_avec_fallback pour la génération LLM.
+Phase 1 — Générateur de narration à partir de VRAIES news (flux RSS).
+Le contenu est toujours réel : on part d'un article vrai, le LLM ne fait
+que reformuler en narration courte, sans rien inventer.
 """
 import json
 import os
 import random
+import re
 import sys
+import xml.etree.ElementTree as ET
 
-# Ajoute la racine au path pour importer les modules du projet
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import requests
 import nyavo_media as M
-from content_config import PILLARS, PILLAR_KEYS, PILLAR_WEIGHTS, SUJETS_PAR_PILIER, TON_EDITORIAL
-
 from video_pipeline.config_video import BASE_DIR, MAX_PHRASES
 
+FEEDS = [
+    ("BBC Tech", "http://feeds.bbci.co.uk/news/technology/rss.xml"),
+    ("The Verge", "https://www.theverge.com/rss/index.xml"),
+    ("TechCrunch", "https://techcrunch.com/feed/"),
+    ("Ars Technica", "https://feeds.arstechnica.com/arstechnica/index"),
+    ("ScienceDaily", "https://www.sciencedaily.com/rss/computers_math.xml"),
+    ("Le Monde", "https://www.lemonde.fr/rss/une.xml"),
+]
 
-def choisir_sujet():
-    pilier = random.choices(PILLAR_KEYS, weights=[PILLAR_WEIGHTS[k] for k in PILLAR_KEYS], k=1)[0]
-    sujet = random.choice(SUJETS_PAR_PILIER[pilier])
-    return pilier, sujet
+
+def _strip_html(t: str) -> str:
+    return re.sub(r"<[^>]+>", "", t or "").strip()
 
 
-def generer_narration(sujet: str, label_pilier: str) -> dict:
-    """Demande au LLM une narration structurée en phrases courtes."""
+def _parse_feed(xml_text: str, source: str) -> list:
+    items = []
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return items
+    for node in root.iter():
+        tag = node.tag.split("}")[-1]
+        if tag in ("item", "entry"):
+            title = desc = link = ""
+            for child in node:
+                t = child.tag.split("}")[-1]
+                if t == "title":
+                    title = (child.text or "").strip()
+                elif t in ("description", "summary", "content"):
+                    desc = _strip_html(child.text or "")
+                elif t == "link":
+                    link = (child.text or "").strip() or child.get("href", "")
+            if title:
+                items.append({"title": title, "desc": desc, "link": link, "source": source})
+    return items
+
+
+def fetch_real_news() -> dict:
+    all_items = []
+    for name, url in FEEDS:
+        try:
+            r = requests.get(url, timeout=15, headers={"User-Agent": "Nyavodroid/1.0"})
+            if r.status_code == 200:
+                all_items += _parse_feed(r.text, name)
+        except Exception as e:
+            print(f"    ⚠️ Feed {name} : {e}")
+    if not all_items:
+        raise RuntimeError("Aucune news récupérée (flux RSS injoignables)")
+    return random.choice(all_items)
+
+
+def generer_narration(article: dict) -> dict:
     prompt = (
-        "Tu es Nyavodroid. Tu écris la narration d'une vidéo YouTube/TikTok verticale.\n"
-        f"Sujet : {sujet}\n"
-        f"Axe éditorial : {label_pilier}\n\n"
-        f"Contraintes :\n"
-        f"- Français uniquement.\n"
-        f"- Entre 5 et {MAX_PHRASES} phrases courtes (max 15 mots par phrase).\n"
-        f"- La première phrase doit être une ACCROCHE choc (question ou fait surprenant).\n"
-        f"- La dernière phrase doit être une RÉVÉLATION ou chute mémorable.\n"
-        f"- Entre les deux : TENSION progressive (faits, chiffres, explications).\n"
-        f"- Aucune phrase orpheline, aucun connecteur inutile ('En effet', 'Ainsi', ...).\n"
-        f"- Style : percutant, direct, sans jargon.\n\n"
-        f"Réponds UNIQUEMENT en JSON (sans markdown) :\n"
-        f'{{\n'
-        f'  "title": "Titre accrocheur de 6 mots max",\n'
-        f'  "style": "documentaire dynamique",\n'
-        f'  "voice_style": "mystérieux",\n'
-        f'  "phrases": ["phrase 1", "phrase 2", ...]\n'
-        f'}}\n'
+        "Tu es Nyavodroid. Voici un VRAI article d'actualité :\n"
+        f"Source : {article['source']}\n"
+        f"Titre : {article['title']}\n"
+        f"Résumé : {article['desc']}\n\n"
+        "Écris la narration d'une vidéo verticale courte en français.\n"
+        f"Entre 5 et {MAX_PHRASES} phrases courtes (max 15 mots chacune).\n"
+        "INTERDICTION ABSOLUE d'inventer des chiffres, dates ou faits absents de l'article.\n"
+        "Si le résumé manque de détail, reste général mais vrai.\n"
+        "1ère phrase = accroche choc. Dernière phrase = chute mémorable.\n"
+        "Réponds UNIQUEMENT en JSON : {\"phrases\": [\"...\", ...]}\n"
     )
-
-    print(f"  📝 Génération narration...")
     brut = M.texte_avec_fallback(prompt, os.environ.get("GEMINI_API_KEY_CONTENT", ""), "[video script]")
     brut = brut.strip()
     if brut.startswith("```json"): brut = brut[7:]
     if brut.endswith("```"): brut = brut[:-3]
-
     try:
-        data = json.loads(brut)
-    except json.JSONDecodeError:
-        # Fallback : split sur les points
-        phrases = [p.strip() for p in brut.replace("!", ".").replace("?", ".").split(".") if p.strip()]
-        data = {"title": sujet, "style": "documentaire", "voice_style": "neutre", "phrases": phrases}
-
-    # Validation / nettoyage
-    phrases = [M.clean_text(p) for p in data.get("phrases", []) if p.strip()]
-    if not phrases:
-        phrases = [sujet]
-    phrases = phrases[:MAX_PHRASES]
-
-    return {
-        "title": M.clean_text(data.get("title", sujet))[:60],
-        "style": data.get("style", "documentaire dynamique"),
-        "voice_style": data.get("voice_style", "mystérieux"),
-        "phrases": phrases,
-    }
+        phrases = [M.clean_text(p) for p in json.loads(brut).get("phrases", []) if p.strip()]
+    except Exception:
+        phrases = [M.clean_text(article["title"])]
+    return {"phrases": phrases[:MAX_PHRASES] or [M.clean_text(article["title"])]}
 
 
 def main():
-    M.ensure_dirs() if hasattr(M, "ensure_dirs") else None
     os.makedirs(BASE_DIR, exist_ok=True)
+    print("\n📰 [01_script] Récupération de vraies news (RSS)...")
+    article = fetch_real_news()
+    print(f"  📌 Article : {article['title']} ({article['source']})")
 
-    pilier, sujet = choisir_sujet()
-    print(f"\n🎬 [01_script] Sujet : {sujet} (axe : {PILLARS[pilier]['label']})")
+    meta = generer_narration(article)
 
-    meta = generer_narration(sujet, PILLARS[pilier]["label"])
-
-    # Sauvegarde narration
-    narration_path = os.path.join(BASE_DIR, "narration.txt")
-    with open(narration_path, "w", encoding="utf-8") as f:
+    with open(os.path.join(BASE_DIR, "narration.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(meta["phrases"]))
-    print(f"  ✅ Narration : {len(meta['phrases'])} phrases → {narration_path}")
 
-    # Sauvegarde metadata
-    meta_path = os.path.join(BASE_DIR, "metadata.json")
-    with open(meta_path, "w", encoding="utf-8") as f:
+    with open(os.path.join(BASE_DIR, "metadata.json"), "w", encoding="utf-8") as f:
         json.dump({
-            "sujet": sujet,
-            "pilier": pilier,
-            "title": meta["title"],
-            "style": meta["style"],
-            "voice_style": meta["voice_style"],
+            "sujet": article["title"],
+            "title": article["title"],
+            "source": article["source"],
+            "link": article["link"],
+            "style": "documentaire dynamique",
             "nb_phrases": len(meta["phrases"]),
         }, f, indent=2, ensure_ascii=False)
-    print(f"  ✅ Meta → {meta_path}")
+
+    print(f"  ✅ Narration : {len(meta['phrases'])} phrases")
 
 
 if __name__ == "__main__":
