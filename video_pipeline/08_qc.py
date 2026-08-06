@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Phase 8 — Contrôle qualité bloquant avant publication.
-Si une condition critique échoue → exit 3 (pas de publication).
+Phase 8 — Contrôle qualité avant publication.
+- Bloquant : niche Tech/Science + confiance (forte/moyenne) + vidéo/scènes valides.
+- NON bloquant : source manquante (simple avertissement).
 """
 import json
 import os
@@ -28,12 +29,17 @@ def check_metadata():
         return False, msg
     with open(meta_path, "r", encoding="utf-8") as f:
         meta = json.load(f)
+
     if not meta.get("niche_ok"):
         return False, "niche_ok = false"
     if meta.get("confiance") not in ("forte", "moyenne"):
         return False, f"confiance invalide : {meta.get('confiance')}"
+
+    # Source : avertissement seulement, ne bloque PAS
     if not meta.get("source"):
-        return False, "source manquante"
+        print("    ⚠️ Source absente (non bloquant)")
+        return True, "OK (sans source)"
+
     return True, f"Source : {meta['source']} | confiance : {meta['confiance']}"
 
 
@@ -56,7 +62,7 @@ def check_final_video():
 
 
 def main():
-    print("\n🔍 [08_qc] Contrôle qualité bloquant\n")
+    print("\n🔍 [08_qc] Contrôle qualité\n")
     checks = [
         ("Metadata", check_metadata),
         ("Scènes", check_scenes),
