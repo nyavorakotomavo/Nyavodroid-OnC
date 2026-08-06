@@ -63,24 +63,23 @@ def concat_clips(clips, out):
                     "-pix_fmt", "yuv420p", "-y", out])
     return ok and os.path.isfile(out)
 
-
 def build_video_filter(subs, has_logo):
     parts, cur = [], "[0:v]"
     if has_logo:
         parts.append("[1:v]scale=120:120,format=rgba[lg]")
-        parts.append(f"{cur}[lg]overlay=40:{SAFE_TOP}[base]")
+        parts.append(f"{cur}[lg]overlay=40:40[base]")
         cur = "[base]"
     for i, (txt, s, e) in enumerate(subs):
         tf = os.path.abspath(os.path.join(BASE_DIR, f"sub_{i}.txt"))
         with open(tf, "w", encoding="utf-8") as f:
             f.write(txt)
         nxt = f"[dt{i}]"
-        # Sous-titres SANS boîtes : contour noir + ombre + fade-in/out
+        # Sous-titres centrés (milieu vertical + horizontal) + très visibles
         alpha_expr = f"if(lt(t-{s:.2f},0.3),(t-{s:.2f})/0.3,if(gt(t,{e:.2f}-0.3),({e:.2f}-t)/0.3,1))"
         parts.append(
-            f"{cur}drawtext=fontfile={FONT_BOLD}:textfile='{tf}':fontsize=58:"
-            f"fontcolor=white:borderw=5:bordercolor=black:shadowx=3:shadowy=3:shadowcolor=black@0.6:"
-            f"x=(w-text_w)/2:y=h-text_h-{SAFE_BOTTOM}:"
+            f"{cur}drawtext=fontfile={FONT_BOLD}:textfile='{tf}':fontsize=64:"
+            f"fontcolor=white:borderw=6:bordercolor=black:shadowx=4:shadowy=4:shadowcolor=black@0.8:"
+            f"x=(w-text_w)/2:y=(h-text_h)/2:"
             f"alpha='{alpha_expr}':enable='between(t,{s:.2f},{e:.2f})'{nxt}")
         cur = nxt
     return ";".join(parts), cur
