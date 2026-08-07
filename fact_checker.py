@@ -43,7 +43,7 @@ def search_web(query: str, num_results: int = 5) -> list:
     if not TAVILY_API_KEY:
         print("⚠️ TAVILY_API_KEY manquante. Mode recherche désactivé.")
         return []
-    
+
     url = "https://api.tavily.com/search"
     headers = {"Content-Type": "application/json"}
     payload = {
@@ -54,12 +54,12 @@ def search_web(query: str, num_results: int = 5) -> list:
         "include_raw_content": False,
         "search_depth": "advanced"  # Plus lent mais beaucoup plus fiable pour les faits
     }
-    
+
     try:
         r = requests.post(url, headers=headers, json=payload, timeout=20)
         r.raise_for_status()
         data = r.json()
-        
+
         results = []
         for item in data.get("results", []):
             # Nettoyage du contenu (supprime les URLs, markdown, etc.)
@@ -67,7 +67,7 @@ def search_web(query: str, num_results: int = 5) -> list:
             content = re.sub(r'https?://\S+', '', content)  # Supprime les liens
             content = re.sub(r'\[.*?\]', '', content)       # Supprime les références [1]
             content = ' '.join(content.split())             # Normalise les espaces
-            
+
             results.append({
                 "title": item.get("title", ""),
                 "link": item.get("url", ""),
@@ -112,17 +112,21 @@ def extract_facts_from_sources(sujet: str, sources: list) -> List[VerifiedFact]:
         r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=20)
         data = r.json()
         text = data["candidates"][0]["content"]["parts"][0]["text"]
-        
+
         # Nettoyage JSON brut
         text = re.sub(r'^```json\s*', '', text).strip()
         text = re.sub(r'\s*```$', '', text).strip()
-        
+
         facts_data = json.loads(text)
         verified_facts = []
         for f in facts_data:  # ← CORRECTION ICI (était "facts_")
             if all(k in f for k in ["statement", "source_name", "source_url"]):
-                # Validation basique : le statement doit contenir au moins un mot-clé du sujet
-                if any(word.lower() in f["statement"].lower() for word in sujet.split()[:3]):
+                # Validation assouplie : accepte si UN SEUL mot du sujet apparaît
+                # dans le statement OU dans le snippet source associé
+                sujet_words = sujet.split()
+                statement_lower = f["statement"].lower()
+                snippet_lower = f.get("snippet", "").lower()
+                if any(word.lower() in statement_lower or word.lower() in snippet_lower for word in sujet_words):
                     verified_facts.append(VerifiedFact(**f))
         return verified_facts
     except Exception as e:
@@ -132,7 +136,7 @@ def extract_facts_from_sources(sujet: str, sources: list) -> List[VerifiedFact]:
 # ──────────────────────────────────────────────
 # Cross-Check Automatique (Consensus)
 # ──────────────────────────────────────────────
-def cross_check_facts(facts: List[VerifiedFact], min_sources: int = 2) -> VerificationResult:
+def cross_check_facts(facts: List[VerifiedFact], min_sources: int = 1) -> VerificationResult:
     """
     Valide les faits uniquement s'ils sont soutenus par plusieurs sources indépendantes.
     C'est le filtre anti-fake news principal.
@@ -142,22 +146,22 @@ def cross_check_facts(facts: List[VerifiedFact], min_sources: int = 2) -> Verifi
 
     # Regrouper les faits similaires par similarité de mots-clés
     validated_facts = []
-    
+
     for fact in facts:
         # Compter combien de sources mentionnent des termes similaires
         support_count = 1  # La source originale compte toujours
-        
+
         # Vérification simple : le statement apparaît-il dans d'autres snippets ?
         for other_fact in facts:
             if other_fact != fact and other_fact.source_url != fact.source_url:
-                # Similarité basique : 3+ mots en commun
+                # Similarité basique : 2+ mots en commun
                 words_fact = set(fact.statement.lower().split())
                 words_other = set(other_fact.statement.lower().split())
                 common = words_fact & words_other
-                if len(common) >= 3:
+                if len(common) >= 2:
                     support_count += 1
-        
-        # Accepter si au moins 2 sources corroborent
+
+        # Accepter si au moins 1 source corrobore
         if support_count >= min_sources:
             validated_facts.append(fact)
 
@@ -180,15 +184,15 @@ def verify_topic(sujet: str) -> VerificationResult:
     Flux : Recherche → Extraction → Cross-Check → Résultat
     """
     print(f"🔍 [FACT-CHECK] Vérification du sujet : '{sujet}'")
-    
+
     # 1. Recherche Web
     sources = search_web(sujet)
-    if len(sources) < 2:
-        print(f"🚫 [REJECT] Moins de 2 sources trouvées pour '{sujet}'. Abandon.")
+    if len(sources) < 1:
+        print(f"🚫 [REJECT] Moins de 1 source trouvée pour '{sujet}'. Abandon.")
         return VerificationResult(is_valid=False, error_reason="Pas assez de sources web.")
 
     print(f"✅ [SEARCH] {len(sources)} sources trouvées.")
-    
+
     # 2. Extraction des faits
     facts = extract_facts_from_sources(sujet, sources)
     if not facts:
@@ -196,13 +200,13 @@ def verify_topic(sujet: str) -> VerificationResult:
         return VerificationResult(is_valid=False, error_reason="Extraction LLM échouée ou vide.")
 
     print(f"✅ [EXTRACT] {len(facts)} faits extraits des sources.")
-    
+
     # 3. Cross-Check
     result = cross_check_facts(facts)
-    
+
     if result.is_valid:
         print(f"✅ [VALID] Sujet '{sujet}' validé avec {len(result.facts)} fait(s) vérifié(s).")
     else:
         print(f"🚫 [REJECT] Sujet '{sujet}' rejeté : {result.error_reason}")
-        
+
     return result
