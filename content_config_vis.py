@@ -105,10 +105,10 @@ BACKGROUND_GRADIENT = ["#5C4033", "#6B4E35", "#3E2723", "#A67C52", "#C4B08E", "#
 CANVAS_SIZE_TEXTE_SEUL = (1080, 1080)
 CANVAS_MARGIN_TEXTE_SEUL = 90
 
-# ── Polices (Fraunces + Nunito) ───────────────────────────────
+# ── Polices (Inter Bold (titres) + Nunito (texte)) ───────────────────────────────
 FONT_DIR = "assets/fonts"
 FONT_REGULAR_PATH = os.path.join(FONT_DIR, "Nunito-VariableFont_wght.ttf")
-FONT_BOLD_PATH    = os.path.join(FONT_DIR, "Fraunces-VariableFont.ttf")
+FONT_BOLD_PATH    = os.path.join(FONT_DIR, "Inter-Bold.ttf")
 
 def get_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     path = FONT_BOLD_PATH if bold else FONT_REGULAR_PATH
