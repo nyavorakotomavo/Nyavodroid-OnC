@@ -21,19 +21,14 @@ PILLARS = {
         "description": "Une phrase-leçon sur fond papier brun, texte serif crème.",
         "mots_cles": [], "categorie": "fiction",
     },
-    "nviss_humeur": {
-        "label": "La vie de Nviss",
-        "description": "Nviss seul dans une humeur (fier, triste, curieux, en paix) — reconnaissance de marque.",
-        "mots_cles": [], "categorie": "fiction",
-    },
     "nviss_question": {
-        "label": "Nviss te demande",
-        "description": "Question bienveillante sur fond brun pour provoquer les commentaires.",
+        "label": "Nviss te demande (Humeur + Question)",
+        "description": "Nviss dans une micro-scène émotionnelle + une question bienveillante pour engager la communauté.",
         "mots_cles": [], "categorie": "fiction",
     },
 }
 PILLAR_KEYS = list(PILLARS.keys())
-PILLAR_WEIGHTS = {"parabole": 45, "morale": 20, "nviss_humeur": 15, "nviss_question": 20}
+PILLAR_WEIGHTS = {"parabole": 45, "morale": 20, "nviss_question": 35}
 
 # ── Banque de sujets (anti-répétition) ──
 SUJETS_PAR_PILIER = {
@@ -52,15 +47,11 @@ SUJETS_PAR_PILIER = {
         "Un pas minuscule reste un pas.",
         "On ne fleurit pas en regardant le voisin.",
     ],
-    "nviss_humeur": [
-        "Nviss est fier aujourd'hui", "Nviss est triste mais pas seul",
-        "Nviss est curieux", "Nviss est en paix", "Nviss est timide",
-    ],
     "nviss_question": [
-        "Et toi, quel petit pas as-tu fait aujourd'hui ?",
-        "Qu'est-ce qui grandit doucement en toi en ce moment ?",
-        "Quand as-tu pris ton dernier moment lent ?",
-        "Quelle petite chose t'a rendu fier cette semaine ?",
+        "Nviss est pensif devant une graine : qu'est-ce qui grandit doucement en toi ?",
+        "Nviss est fier d'une petite pousse : quelle petite chose t'a rendu fier cette semaine ?",
+        "Nviss regarde le ciel : quand as-tu pris ton dernier moment lent ?",
+        "Nviss est triste mais pas seul : comment te réconfortes-tu les jours de pluie ?",
     ],
 }
 
