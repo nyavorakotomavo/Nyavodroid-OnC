@@ -11,8 +11,8 @@ from PIL import ImageFont
 # ── Piliers éditoriaux (fiction) ──
 PILLARS = {
     "parabole": {
-        "label": "Parabole illustrée de Nviss",
-        "description": "Histoire morale courte en 6 slides, Nviss le cercle plat comme protagoniste.",
+        "label": "Parabole illustrée",
+        "description": "Histoire morale courte en 6 slides, protagoniste abstrait ou environnement.",
         "mots_cles": ["patience", "confiance", "gratitude", "résilience", "acceptation"],
         "categorie": "fiction",
     },
@@ -21,23 +21,22 @@ PILLARS = {
         "description": "Une phrase-leçon sur fond papier brun, texte serif crème.",
         "mots_cles": [], "categorie": "fiction",
     },
-    "nviss_question": {
-        "label": "Nviss te demande (Humeur + Question)",
-        "description": "Nviss dans une micro-scène émotionnelle + une question bienveillante pour engager la communauté.",
+    "question": {
+        "label": "Question du jour",
+        "description": "Question bienveillante sur fond brun pour provoquer les commentaires.",
         "mots_cles": [], "categorie": "fiction",
     },
 }
 PILLAR_KEYS = list(PILLARS.keys())
-PILLAR_WEIGHTS = {"parabole": 45, "morale": 20, "nviss_question": 35}
+PILLAR_WEIGHTS = {"parabole": 50, "morale": 25, "question": 25}
 
 # ── Banque de sujets (anti-répétition) ──
 SUJETS_PAR_PILIER = {
     "parabole": [
-        "Nviss qui voulait être un carré (acceptation de soi)",
         "Le chemin qui serpente (patience)",
         "La fleur dans la terre craquelée (résilience)",
         "L'arbre qui poussait lentement (croissance douce)",
-        "Nviss et son reflet dans l'eau (estime de soi)",
+        "Le reflet dans l'eau (estime de soi)",
         "Le caillou trop lourd à porter (savoir lâcher)",
         "La petite pluie qui a nourri la graine (les petits pas)",
     ],
@@ -47,11 +46,11 @@ SUJETS_PAR_PILIER = {
         "Un pas minuscule reste un pas.",
         "On ne fleurit pas en regardant le voisin.",
     ],
-    "nviss_question": [
-        "Nviss est pensif devant une graine : qu'est-ce qui grandit doucement en toi ?",
-        "Nviss est fier d'une petite pousse : quelle petite chose t'a rendu fier cette semaine ?",
-        "Nviss regarde le ciel : quand as-tu pris ton dernier moment lent ?",
-        "Nviss est triste mais pas seul : comment te réconfortes-tu les jours de pluie ?",
+    "question": [
+        "Qu'est-ce qui grandit doucement en toi en ce moment ?",
+        "Quand as-tu pris ton dernier moment lent ?",
+        "Quelle petite chose t'a rendu fier cette semaine ?",
+        "Que laisses-tu derrière toi pour avancer plus léger ?",
     ],
 }
 
@@ -72,6 +71,15 @@ TON_EDITORIAL = (
 STYLE_IMAGE_SUFFIX = (
     "Children's picture book illustration in the spirit of 1950s-70s European youth illustration "
     "and the poetic universe of Michaël Dudok de Wit (Ella, Oscar & Hoo): digital watercolor on "
+    "heavily textured cold press paper, visible paper grain everywhere including sky, dry brush "
+    "texture, wet-on-wet soft transitions, organic brown contour lines slightly thickened at "
+    "intersections and broken in places (walnut, espresso — NEVER pure black), childlike minimal "
+    "shapes, flat naive perspective, vegetation as suggested painted shapes. "
+    "STRICTLY monochrome brown palette only: cream #D4C4A8, sand #C4B08E, caramel #A67C52, "
+    "honey #8B6340, chestnut #6B4E35, cinnamon #7A4A30, mocha #5C4033, chocolate #3E2723, "
+    "coffee #2E1F16, espresso #1A120B. If any green, blue, red or saturated color tends to appear, "
+    "replace it with the closest brown tone. NO pure black, NO pure white. ABSOLUTELY NO TEXT."
+): digital watercolor on "
     "heavily textured cold press paper, visible paper grain everywhere including sky, dry brush "
     "texture, wet-on-wet soft transitions, organic brown contour lines slightly thickened at "
     "intersections and broken in places (walnut, espresso — NEVER pure black), childlike minimal "
