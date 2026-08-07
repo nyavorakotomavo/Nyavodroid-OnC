@@ -16,7 +16,8 @@ from typing import List, Optional
 # Configuration & Secrets
 # ──────────────────────────────────────────────
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY_CONTENT", "")  # Pour extraction LLM
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY_CONTENT", "")  # Réservée à l'image generation
+MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")  # Pour extraction LLM
 
 @dataclass
 class VerifiedFact:
@@ -87,7 +88,7 @@ def extract_facts_from_sources(sujet: str, sources: list) -> List[VerifiedFact]:
     Utilise le LLM UNIQUEMENT pour extraire et structurer les faits des sources brutes.
     INTERDIT au LLM d'ajouter des infos externes.
     """
-    if not GEMINI_API_KEY or not sources:
+    if not MISTRAL_API_KEY or not sources:
         return []
 
     context_str = "\n\n".join([
@@ -107,11 +108,28 @@ def extract_facts_from_sources(sujet: str, sources: list) -> List[VerifiedFact]:
         f"SUJET : {sujet}\n\nSOURCES :\n{context_str}\n\nJSON :"
     )
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={GEMINI_API_KEY}"
+    url = "https://api.mistral.ai/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {MISTRAL_API_KEY}"
+    }
+    payload = {
+        "model": "mistral-small-latest",
+        "messages": [{"role": "user", "content": prompt}]
+    }
     try:
-        r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=20)
+        r = requests.post(url, headers=headers, json=payload, timeout=20)
         data = r.json()
-        text = data["candidates"][0]["content"]["parts"][0]["text"]
+
+        # Diagnostic : si "choices" est absent, on affiche la vraie raison
+        if "choices" not in data:
+            if "error" in data:
+                print(f"⚠️ Erreur API Mistral : {data['error']}")
+            else:
+                print(f"⚠️ Réponse Mistral inattendue (pas de 'choices') : {json.dumps(data)[:500]}")
+            return []
+
+        text = data["choices"][0]["message"]["content"]
 
         # Nettoyage JSON brut
         text = re.sub(r'^```json\s*', '', text).strip()
