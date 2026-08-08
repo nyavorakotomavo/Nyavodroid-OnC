@@ -1333,7 +1333,8 @@ def _t_cloudflare(prompt: str) -> str:
                 data = r.json()
                 if not data.get("success"):
                     raise ValueError(f"Cloudflare erreur : {data}")
-                txt = data.get("result", {}).get("response", "")
+                res = data.get('result', {})
+                txt = res.get('response', "") if isinstance(res, dict) else str(res)
                 if not txt:
                     raise ValueError(f"Cloudflare réponse vide : {data}")
                 _t_cloudflare.idx = (idx + 1) % n
