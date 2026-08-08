@@ -5,7 +5,8 @@ Nyavodroid — VIS : moteur de publication (définitif v2).
 - Story : fond AQUARELLE IA (Cloudflare) + texte crème, jamais de fond uni Pillow.
 VIS_FORCE_PILIER / VIS_EXCLUDE gérés. AUCUN fact_checker.
 """
-import os, json, random, sys, time, requests
+import os, json, random, sys, time, requests, subprocess
+from datetime import datetime, timedelta
 from PIL import Image, ImageDraw
 import nyavo_media as M
 from content_config import (
@@ -26,6 +27,66 @@ EXCLUDE = [x.strip() for x in os.environ.get("VIS_EXCLUDE", "").split(",") if x.
 SLIDE = 1080
 STORY_W, STORY_H = 1080, 1920
 DELAY_ENTRE_SLIDES = 20
+
+
+# ══════════════════════════════════════════
+# HISTORIQUE — anti-répétition (30 jours glissants)
+# ══════════════════════════════════════════
+HISTORY_FILE = "published_history.json"
+
+def charger_historique() -> dict:
+    """Charge l'historique des publications (sujet → date ISO)."""
+    if not os.path.isfile(HISTORY_FILE):
+        return {"publications": []}
+    try:
+        with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {"publications": []}
+
+def sauvegarder_historique(hist: dict) -> None:
+    """Sauvegarde l'historique et commit automatiquement."""
+    with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
+        json.dump(hist, f, indent=2, ensure_ascii=False)
+    # Auto-commit (ignoré si rien à committer)
+    try:
+        subprocess.run(['git', 'add', HISTORY_FILE], check=False, capture_output=True)
+        subprocess.run(['git', 'commit', '-m', 'chore(vis): mise à jour historique publications'],
+                       check=False, capture_output=True)
+        subprocess.run(['git', 'push'], check=False, capture_output=True)
+    except Exception:
+        pass  # Pas bloquant si le commit échoue
+
+def sujets_disponibles(pilier: str) -> list:
+    """Retourne les sujets non publiés dans les 30 derniers jours."""
+    hist = charger_historique()
+    cutoff = datetime.now() - timedelta(days=30)
+    deja_publies = {
+        p["sujet"] for p in hist["publications"]
+        if p["pilier"] == pilier and datetime.fromisoformat(p["date"]) > cutoff
+    }
+    tous = SUJETS_PAR_PILIER[pilier]
+    dispo = [s for s in tous if s not in deja_publies]
+    if not dispo:
+        print(f"  ⚠️ Tous les sujets {pilier} publiés → reset (recyclage)")
+        dispo = tous
+    return dispo
+
+def enregistrer_publication(pilier: str, sujet: str) -> None:
+    """Ajoute une publication à l'historique."""
+    hist = charger_historique()
+    hist["publications"].append({
+        "pilier": pilier,
+        "sujet": sujet,
+        "date": datetime.now().isoformat()
+    })
+    # Garde seulement les 90 derniers jours
+    cutoff = datetime.now() - timedelta(days=90)
+    hist["publications"] = [
+        p for p in hist["publications"]
+        if datetime.fromisoformat(p["date"]) > cutoff
+    ]
+    sauvegarder_historique(hist)
 
 SCENES_PARABOLE = [
     ("ACCROCHE",       "Wide establishing shot: a soft brown hill with a winding cream path, blotchy watercolor sun in hazy sky, childlike character (round body, dot eyes) sitting peacefully, large empty cream paper sky at the top"),
@@ -146,8 +207,36 @@ def generer_textes_parabole(sujet: str) -> dict:
     )
     print("  📝 Génération titres/morale/question...")
     brut = texte_vis_garantie(prompt, "[parabole]").strip()
-    if brut.startswith("```"): brut = brut.strip("`json ")
-    return json.loads(brut)
+    
+    # Nettoyage robuste du JSON (Cloudflare peut retourner du texte parasite)
+    brut = re.sub(r'^```(?:json)?\s*', '', brut)
+    brut = re.sub(r'\s*```$', '', brut)
+    brut = brut.strip()
+    
+    # Extrait le premier objet JSON valide
+    decoder = json.JSONDecoder()
+    try:
+        obj, _ = decoder.raw_decode(brut)
+        if isinstance(obj, dict):
+            return obj
+    except json.JSONDecodeError:
+        pass
+    
+    # Fallback : cherche { ... } dans le texte
+    match = re.search(r'\{[^{}]*"titre"[^{}]*\}', brut, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+    
+    # Dernier recours : valeurs par défaut
+    print("  ⚠️ JSON invalide → valeurs par défaut")
+    return {
+        "titre": sujet.split("(")[0].strip()[:40],
+        "morale": "Les petits pas font les grands chemins.",
+        "question": "Quel petit pas fais-tu aujourd'hui ?"
+    }
 
 def generer_slides(sujet: str, textes: dict) -> list:
     chemins = []
@@ -223,20 +312,23 @@ def publier_carrousel(chemins: list, legende: str) -> dict:
     return out
 
 def publier_parabole() -> dict:
-    sujet = random.choice(SUJETS_PAR_PILIER["parabole"])
+    sujet = random.choice(sujets_disponibles("parabole"))
     print(f"📌 Sujet : {sujet}")
     textes = generer_textes_parabole(sujet)
     chemins = generer_slides(sujet, textes)
     legende = (f"{textes.get('morale','')}\n\n{textes.get('question','')}\n\n"
                "#DeveloppementPersonnel #LeconDeVie #HistoireIllustrée")
     print(f"📌 Légende :\n{legende}")
-    return publier_carrousel(chemins, legende)
+    res = publier_carrousel(chemins, legende)
+    if res.get("id") and res["id"] != "dry-run":
+        enregistrer_publication("parabole", sujet)
+    return res
 
 # ══════════════════════════════════════════
 # MORALE / QUESTION
 # ══════════════════════════════════════════
 def publier_texte_vis(pilier: str) -> dict:
-    texte = random.choice(SUJETS_PAR_PILIER[pilier])
+    texte = random.choice(sujets_disponibles(pilier))
     print(f"📌 Texte : {texte}")
     chemin = "vis_texte.png"
     M.generer_fond_texte_seul(texte, chemin)
@@ -259,7 +351,7 @@ def publier_texte_vis(pilier: str) -> dict:
 # STORY — fond AQUARELLE IA + texte crème
 # ══════════════════════════════════════════
 def publier_story_vis() -> dict:
-    texte = random.choice(SUJETS_PAR_PILIER["story"])
+    texte = random.choice(sujets_disponibles("story"))
     print(f"📌 Story : {texte}")
     chemin = "vis_story.png"
     prompt = ("Serene watercolor landscape at golden hour, rolling brown hills, winding cream "
@@ -279,6 +371,7 @@ def publier_story_vis() -> dict:
     res = r.json()
     if "id" not in res: raise ValueError(f"Publication story échouée : {res}")
     print(f"  ✅ Story publiée : {res['id']}")
+    enregistrer_publication("story", texte)
     return res
 
 # ══════════════════════════════════════════
