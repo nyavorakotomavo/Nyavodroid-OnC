@@ -20,6 +20,8 @@ if BRAND != "vis":
 GEMINI_API_KEY = M.clean(os.environ["GEMINI_API_KEY_CONTENT"])
 DRY_RUN = os.environ.get("VIS_DRY_RUN", "") == "1"
 FORCE_PILIER = os.environ.get("VIS_FORCE_PILIER", "").strip().lower()
+if FORCE_PILIER in ("aleatoire", "random", "au hasard"):
+    FORCE_PILIER = ""
 EXCLUDE = [x.strip() for x in os.environ.get("VIS_EXCLUDE", "").split(",") if x.strip()]
 SLIDE = 1080
 STORY_W, STORY_H = 1080, 1920
