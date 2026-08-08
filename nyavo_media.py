@@ -1296,7 +1296,7 @@ CLOUDFLARE_TEXT_MODELS = [
 ]
 
 def _t_cloudflare(prompt: str) -> str:
-    """Génération texte via Cloudflare Workers AI (round-robin multi-comptes)."""
+    """Texte via Cloudflare Workers AI (round-robin multi-comptes). Robuste à tout format."""
     creds = []
     for suffix in ("", "_2", "_3"):
         acc = clean(os.environ.get(f"CLOUDFLARE_ACCOUNT_ID{suffix}", ""))
@@ -1304,49 +1304,76 @@ def _t_cloudflare(prompt: str) -> str:
         if acc and tok:
             creds.append((acc, tok))
     if not creds:
-        raise ValueError("Aucun identifiant Cloudflare configuré")
-    
+        raise ValueError("Aucun identifiant Cloudflare")
     if not hasattr(_t_cloudflare, "idx"):
         _t_cloudflare.idx = 0
-    
     n = len(creds)
     derniere = None
-    
     for i in range(n):
         idx = (_t_cloudflare.idx + i) % n
         acc, tok = creds[idx]
-        
         for model in CLOUDFLARE_TEXT_MODELS:
             url = f"https://api.cloudflare.com/client/v4/accounts/{acc}/ai/run/{model}"
             try:
                 r = _req(
                     "POST", url,
                     headers={"Authorization": f"Bearer {tok}", "Content-Type": "application/json"},
-                    json_data={
-                        "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 500,
-                        "temperature": 0.9,
-                    },
-                    timeout=30,
-                    max_retries=1,
+                    json_data={"messages": [{"role": "user", "content": prompt}],
+                               "max_tokens": 500, "temperature": 0.9},
+                    timeout=30, max_retries=1,
                 )
                 data = r.json()
                 if not data.get("success"):
-                    raise ValueError(f"Cloudflare erreur : {data}")
-                res = data.get('result', {})
-                txt = res.get('response', "") if isinstance(res, dict) else res
-                if isinstance(txt, dict):
-                    txt = txt.get('content', "") if 'content' in txt else str(txt)
-                txt = str(txt) if txt else ""
+                    raise ValueError(f"CF erreur : {data}")
+                # ─── Extraction robuste du texte ───
+                res = data.get("result")
+                txt = _extract_cf_text(res)
                 if not txt.strip():
+                    raise ValueError(f"CF réponse vide : {data}")
+                _t_cloudflare.idx = (idx + 1) % n
+                print(f"    ☁️ Cloudflare texte OK (compte #{idx+1}/{n}, {model})")
                 return clean_text(txt)
             except Exception as e:
                 derniere = e
-                print(f"    ⚠️ Cloudflare {model} (compte #{idx+1}/{n}) : {sanitize_log(str(e))} → suivant")
+                print(f"    ⚠️ CF {model} (#{idx+1}/{n}) : {sanitize_log(str(e))}")
                 continue
-    
     _t_cloudflare.idx = (_t_cloudflare.idx + 1) % n
-    raise RuntimeError(f"Cloudflare texte KO (tous comptes/modèles) : {sanitize_log(str(derniere))}")
+    raise RuntimeError(f"CF texte KO : {sanitize_log(str(derniere))}")
+
+
+def _extract_cf_text(res) -> str:
+    """Extrait le texte de n'importe quel format de réponse Cloudflare."""
+    if res is None:
+        return ""
+    if isinstance(res, str):
+        return res
+    if isinstance(res, bytes):
+        return res.decode("utf-8", errors="replace")
+    if isinstance(res, list):
+        # Certains modèles renvoient une liste de chunks
+        parts = []
+        for item in res:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                parts.append(item.get("content", "") or item.get("text", "") or item.get("response", ""))
+        return " ".join(p for p in parts if p)
+    if isinstance(res, dict):
+        # Cas courant : {"response": "..."} ou {"response": {"content": "..."}}
+        for key in ("response", "content", "text", "output", "message"):
+            if key in res:
+                val = res[key]
+                if isinstance(val, str):
+                    return val
+                if isinstance(val, dict):
+                    for subkey in ("content", "text", "response"):
+                        if subkey in val and isinstance(val[subkey], str):
+                            return val[subkey]
+                if isinstance(val, list):
+                    return " ".join(str(x) for x in val if x)
+        # Fallback : concatène toutes les valeurs string
+        return " ".join(str(v) for v in res.values() if isinstance(v, str))
+    return str(res)
 
 
 # ══════════════════════════════════════════
