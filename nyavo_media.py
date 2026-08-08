@@ -1282,3 +1282,65 @@ def image_cloudflare_first(prompt: str, gemini_key: str, chemin: str,
         print(f"    ⚠️ Pollinations : {e}")
 
     raise RuntimeError("Image impossible (tous fournisseurs KO) :\n  " + "\n  ".join(erreurs))
+
+
+# ══════════════════════════════════════════
+# TEXTE — Cloudflare Workers AI (priorité VIS)
+# ══════════════════════════════════════════
+CLOUDFLARE_TEXT_MODELS = [
+    "@cf/meta/llama-3.1-8b-instruct",
+    "@hf/mistralai/mistral-7b-instruct-v0.2",
+    "@cf/mistralai/mistral-7b-instruct-v0.1",
+]
+
+def _t_cloudflare(prompt: str) -> str:
+    """Génération texte via Cloudflare Workers AI (round-robin multi-comptes)."""
+    creds = []
+    for suffix in ("", "_2", "_3"):
+        acc = clean(os.environ.get(f"CLOUDFLARE_ACCOUNT_ID{suffix}", ""))
+        tok = clean(os.environ.get(f"CLOUDFLARE_API_TOKEN{suffix}", ""))
+        if acc and tok:
+            creds.append((acc, tok))
+    if not creds:
+        raise ValueError("Aucun identifiant Cloudflare configuré")
+    
+    if not hasattr(_t_cloudflare, "idx"):
+        _t_cloudflare.idx = 0
+    
+    n = len(creds)
+    derniere = None
+    
+    for i in range(n):
+        idx = (_t_cloudflare.idx + i) % n
+        acc, tok = creds[idx]
+        
+        for model in CLOUDFLARE_TEXT_MODELS:
+            url = f"https://api.cloudflare.com/client/v4/accounts/{acc}/ai/run/{model}"
+            try:
+                r = _req(
+                    "POST", url,
+                    headers={"Authorization": f"Bearer {tok}", "Content-Type": "application/json"},
+                    json_data={
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 500,
+                        "temperature": 0.9,
+                    },
+                    timeout=30,
+                    max_retries=1,
+                )
+                data = r.json()
+                if not data.get("success"):
+                    raise ValueError(f"Cloudflare erreur : {data}")
+                txt = data.get("result", {}).get("response", "")
+                if not txt:
+                    raise ValueError(f"Cloudflare réponse vide : {data}")
+                _t_cloudflare.idx = (idx + 1) % n
+                print(f"    ☁️ Cloudflare texte OK (compte #{idx+1}/{n}, modèle {model})")
+                return clean_text(txt)
+            except Exception as e:
+                derniere = e
+                print(f"    ⚠️ Cloudflare {model} (compte #{idx+1}/{n}) : {sanitize_log(str(e))} → suivant")
+                continue
+    
+    _t_cloudflare.idx = (_t_cloudflare.idx + 1) % n
+    raise RuntimeError(f"Cloudflare texte KO (tous comptes/modèles) : {sanitize_log(str(derniere))}")
