@@ -109,7 +109,7 @@ def generer_slides(sujet: str, textes: dict) -> list:
             f"{STYLE_IMAGE_SUFFIX} Scene {i}/6 — {acte}. {visuel}. "
             f"Story theme: {sujet}. Square format, same character design across all scenes."
         )
-        M.image_avec_fallback(prompt, GEMINI_API_KEY, chemin, size=(SLIDE, SLIDE))
+        M.image_cloudflare_first(prompt, GEMINI_API_KEY, chemin, size=(SLIDE, SLIDE))
         img = ajouter_grain(Image.open(chemin))
         img.save(chemin)
         if i == 1:

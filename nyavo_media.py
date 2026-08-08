@@ -1183,3 +1183,102 @@ def incruster_texte_pillow(image_in, contexte, fait_choc, consequence, source,
         draw.text(((w - sw) // 2, h - BOT_SAFE), stxt, font=font_src, fill=COLORS["gris_clair"])
 
     img.convert("RGB").save(image_out)
+
+# ══════════════════════════════════════════
+# VIS — Cloudflare en priorité (zéro quota)
+# ══════════════════════════════════════════
+def image_cloudflare_first(prompt: str, gemini_key: str, chemin: str,
+                           size: tuple[int, int] | None = None) -> None:
+    """
+    Spécial VIS : Cloudflare en priorité absolue (gratuit, illimité).
+    Fallback : Gemini → HF → Together → Fal → Pollinations.
+    Utilisé par post_vis.py pour éviter les 429 Gemini.
+    """
+    if size is None:
+        size = DEFAULT_IMG_SIZE
+    prompt = clean_text(prompt) + (
+        ", high quality, sharp focus, "
+        "ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO NUMBERS, NO TYPOGRAPHY, NO CAPTIONS, "
+        "NO LABELS, NO WATERMARKS, NO FAKE TEXT, NO GIBBERISH TEXT."
+    )
+    erreurs = []
+
+    # 1. CLOUDFLARE (multi-comptes round-robin) — priorité absolue
+    if CLOUDFLARE_CREDS:
+        try:
+            print("    ☁️  Cloudflare image (priorité VIS)...")
+            raw = chemin + ".cf_raw.png"
+            _i_cloudflare(prompt, raw)
+            _check_img(raw)
+            crop_to_ratio(raw, chemin, target_size=size)
+            _check_img(chemin, size)
+            os.remove(raw)
+            print(f"    ✅ Image Cloudflare ({os.path.getsize(chemin):,} o)")
+            return
+        except Exception as e:
+            erreurs.append(f"Cloudflare={e}")
+            print(f"    ⚠️ Cloudflare : {sanitize_log(str(e))}")
+
+    # 2. Fallback : Gemini (si CF down)
+    try:
+        print("    🖼️ Gemini image (fallback)...")
+        _i_gemini(prompt, chemin, gemini_key, size)
+        _check_img(chemin, size)
+        print(f"    ✅ Image Gemini ({os.path.getsize(chemin):,} o)")
+        return
+    except Exception as e:
+        erreurs.append(f"Gemini={e}")
+        print(f"    ⚠️ Gemini : {e}")
+
+    # 3. Hugging Face
+    if HF_TOKEN:
+        try:
+            print("    🖼️ Hugging Face (fallback)...")
+            _i_hf(prompt, chemin, size)
+            _check_img(chemin, size)
+            print(f"    ✅ Image HF ({os.path.getsize(chemin):,} o)")
+            return
+        except Exception as e:
+            erreurs.append(f"HF={e}")
+            print(f"    ⚠️ HF : {e}")
+
+    # 4. Together
+    if TOGETHER_API_KEY:
+        try:
+            print("    🖼️ Together (fallback)...")
+            _i_together(prompt, chemin, size)
+            _check_img(chemin, size)
+            print(f"    ✅ Image Together ({os.path.getsize(chemin):,} o)")
+            return
+        except Exception as e:
+            erreurs.append(f"Together={e}")
+            print(f"    ⚠️ Together : {e}")
+
+    # 5. Fal.ai
+    if FAL_API_KEY:
+        try:
+            print("    🖼️ Fal.ai (fallback)...")
+            raw = chemin + ".raw.png"
+            _i_fal(prompt, raw)
+            _check_img(raw)
+            crop_to_ratio(raw, chemin, target_size=size)
+            _check_img(chemin, size)
+            os.remove(raw)
+            print(f"    ✅ Image Fal.ai ({os.path.getsize(chemin):,} o)")
+            return
+        except Exception as e:
+            erreurs.append(f"Fal.ai={e}")
+            print(f"    ⚠️ Fal.ai : {e}")
+
+    # 6. Pollinations (dernier recours)
+    try:
+        print("    🖼️ Pollinations (dernier recours)...")
+        _i_pollinations(prompt, chemin)
+        _check_img(chemin)
+        print(f"    ✅ Image Pollinations ({os.path.getsize(chemin):,} o)")
+        return
+    except Exception as e:
+        erreurs.append(f"Pollinations={e}")
+        print(f"    ⚠️ Pollinations : {e}")
+
+    raise RuntimeError("Image impossible (tous fournisseurs KO) :\n  " + "\n  ".join(erreurs))
