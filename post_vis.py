@@ -167,6 +167,18 @@ def coller_logo(chemin: str, size: int = 110) -> None:
     img.paste(logo, (MARGIN, MARGIN), mask)
     img.convert("RGB").save(chemin)
 
+def coller_logo_bas(chemin: str, size: int = 110) -> None:
+    """Logo cercle en bas à droite (hors bandeau texte)."""
+    if not os.path.isfile(PROFILE_IMAGE_PATH):
+        return
+    img = Image.open(chemin).convert("RGBA")
+    logo = Image.open(PROFILE_IMAGE_PATH).convert("RGBA").resize((size, size), Image.LANCZOS)
+    mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
+    w, h = img.size
+    img.paste(logo, (w - size - MARGIN, h - size - MARGIN), mask)
+    img.convert("RGB").save(chemin)
+
 def texte_vis_garantie(prompt: str, tag: str = "") -> str:
     if M.CLOUDFLARE_CREDS and hasattr(M, "_t_cloudflare"):
         try:
@@ -331,9 +343,19 @@ def publier_texte_vis(pilier: str) -> dict:
     texte = random.choice(sujets_disponibles(pilier))
     print(f"📌 Texte : {texte}")
     chemin = "vis_texte.png"
-    M.generer_fond_texte_seul(texte, chemin)
+    prompt_fond = (
+        "Soft dreamy watercolor landscape, STRICTLY monochrome brown palette, "
+        + ("rolling hills with a winding cream path, blotchy warm sun"
+           if pilier == "morale"
+           else "quiet pond with soft reflection, small tree, hazy sky")
+        + ", heavy cold press paper grain, 1950s European children's book "
+          "illustration, no characters, square composition, large calm empty sky at top"
+    )
+    print("  🖼️ Fond aquarelle IA...")
+    image_vis_garantie(prompt_fond, chemin, size=(SLIDE, SLIDE))
     img = ajouter_grain(Image.open(chemin)); img.save(chemin)
-    coller_logo(chemin)
+    incruste_haut(chemin, texte, size=52)
+    coller_logo_bas(chemin)
     tags = ("#DeveloppementPersonnel #ParlonsEn" if pilier == "question"
             else "#DeveloppementPersonnel #LeconDeVie")
     legende = f"{texte}\n\n{tags}"
