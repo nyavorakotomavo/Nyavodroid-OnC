@@ -190,7 +190,7 @@ def texte_vis_garantie(prompt: str, tag: str = "") -> str:
 
 def image_vis_garantie(prompt: str, chemin: str, size=(SLIDE, SLIDE)) -> None:
     """Image IA garantie : Cloudflare d'abord (crop ffmpeg), sinon Pollinations."""
-    prompt_complet = M.clean_text(prompt) + ", " + STYLE_IMAGE_SUFFIX
+    prompt_complet = M.clean_text(prompt) + chr(34) + suite + chr(34)
     if M.CLOUDFLARE_CREDS:
         try:
             print("    ☁️ Cloudflare image (priorité absolue VIS)...")
