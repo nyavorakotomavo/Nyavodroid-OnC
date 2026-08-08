@@ -1288,9 +1288,11 @@ def image_cloudflare_first(prompt: str, gemini_key: str, chemin: str,
 # TEXTE — Cloudflare Workers AI (priorité VIS)
 # ══════════════════════════════════════════
 CLOUDFLARE_TEXT_MODELS = [
-    "@cf/meta/llama-3.1-8b-instruct",
-    "@hf/mistralai/mistral-7b-instruct-v0.2",
-    "@cf/mistralai/mistral-7b-instruct-v0.1",
+    "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "@cf/meta/llama-3-8b-instruct",
+    "@hf/thebloke/llama-2-13b-chat-awq",
+    "@cf/mistral/mistral-7b-instruct-v0.1",
+    "@cf/qwen/qwen1.5-7b-chat-awq",
 ]
 
 def _t_cloudflare(prompt: str) -> str:
