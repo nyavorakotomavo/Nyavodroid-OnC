@@ -19,8 +19,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
-      - name: Dépendances
-        run: pip install -r requirements.txt
+      - name: Dépendances + ffmpeg
+        run: |
+          pip install -r requirements.txt
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
       - name: Polices
         run: |
           [ -f assets/fonts/Inter-Bold.ttf ] || python download_fonts.py

@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-Nyavodroid — VIS : moteur de publication (définitif).
-VIS_FORCE_PILIER=story  → force story (vis_stories.yml)
-VIS_EXCLUDE=story       → exclut story (vis.yml)
-Texte : Cloudflare d'abord. Images : Cloudflare d'abord (jamais Gemini en 1er).
-AUCUN fact_checker.
+Nyavodroid — VIS : moteur de publication (définitif v2).
+- Carrousel AUTO-VÉRIFIÉ : si Facebook publie sans images → suppression + photo garantie.
+- Story : fond AQUARELLE IA (Cloudflare) + texte crème, jamais de fond uni Pillow.
+VIS_FORCE_PILIER / VIS_EXCLUDE gérés. AUCUN fact_checker.
 """
 import os, json, random, sys, time, requests
 from PIL import Image, ImageDraw
@@ -23,6 +22,7 @@ DRY_RUN = os.environ.get("VIS_DRY_RUN", "") == "1"
 FORCE_PILIER = os.environ.get("VIS_FORCE_PILIER", "").strip().lower()
 EXCLUDE = [x.strip() for x in os.environ.get("VIS_EXCLUDE", "").split(",") if x.strip()]
 SLIDE = 1080
+STORY_W, STORY_H = 1080, 1920
 DELAY_ENTRE_SLIDES = 20
 
 SCENES_PARABOLE = [
@@ -62,6 +62,38 @@ def incruste_haut(chemin: str, texte: str, size: int = 56) -> None:
         y += stride
     img.convert("RGB").save(chemin)
 
+def incruste_bas_story(chemin: str, texte: str, size: int = 50) -> None:
+    """Bandeau espresso translucide en bas (hors zone UI) + texte crème + logo."""
+    img = Image.open(chemin).convert("RGBA")
+    w, h = img.size
+    font = get_font(size, bold=True)
+    lines = wrap_text_pillow(M.clean_text(texte), font, w - 2 * MARGIN)
+    ascent, descent = font.getmetrics()
+    stride = ascent + descent + 10
+    pad = 45
+    block_h = stride * len(lines)
+    top_band = h - 260 - block_h - 2 * pad
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(overlay).rectangle([0, top_band, w, top_band + block_h + 2 * pad],
+                                      fill=(46, 31, 22, 200))
+    img = Image.alpha_composite(img, overlay)
+    draw = ImageDraw.Draw(img)
+    y = top_band + pad
+    for ln in lines:
+        lw = draw.textlength(ln, font=font)
+        draw.text(((w - lw) / 2, y), ln, font=font, fill=(212, 196, 168))
+        y += stride
+    if os.path.isfile(PROFILE_IMAGE_PATH):
+        try:
+            s = 120
+            logo = Image.open(PROFILE_IMAGE_PATH).convert("RGBA").resize((s, s), Image.LANCZOS)
+            mask = Image.new("L", (s, s), 0)
+            ImageDraw.Draw(mask).ellipse((0, 0, s, s), fill=255)
+            img.paste(logo, (MARGIN, 170), mask)
+        except Exception:
+            pass
+    img.convert("RGB").save(chemin)
+
 def coller_logo(chemin: str, size: int = 110) -> None:
     if not os.path.isfile(PROFILE_IMAGE_PATH):
         print(f"  ⚠️ Logo introuvable : {PROFILE_IMAGE_PATH}"); return
@@ -73,7 +105,6 @@ def coller_logo(chemin: str, size: int = 110) -> None:
     img.convert("RGB").save(chemin)
 
 def texte_vis_garantie(prompt: str, tag: str = "") -> str:
-    """Cloudflare texte d'abord, fallback chaîne classique."""
     if M.CLOUDFLARE_CREDS and hasattr(M, "_t_cloudflare"):
         try:
             print(f"  📝 Texte via Cloudflare {tag}...")
@@ -83,7 +114,7 @@ def texte_vis_garantie(prompt: str, tag: str = "") -> str:
     return M.texte_avec_fallback(prompt, GEMINI_API_KEY, tag)
 
 def image_vis_garantie(prompt: str, chemin: str, size=(SLIDE, SLIDE)) -> None:
-    """Cloudflare image d'abord, JAMAIS Gemini en premier pour vis."""
+    """Image IA garantie : Cloudflare d'abord (crop ffmpeg), sinon Pollinations."""
     prompt_complet = M.clean_text(prompt) + ", " + STYLE_IMAGE_SUFFIX
     if M.CLOUDFLARE_CREDS:
         try:
@@ -96,57 +127,10 @@ def image_vis_garantie(prompt: str, chemin: str, size=(SLIDE, SLIDE)) -> None:
             return
         except Exception as e:
             print(f"    ⚠️ Cloudflare : {M.sanitize_log(str(e))}")
-    try:
-        print("    🖼️ Hugging Face (fallback)...")
-        M._i_hf(prompt_complet, chemin, size)
-        return
-    except Exception as e:
-        print(f"    ⚠️ HF : {e}")
-    print("    🖼️ Pollinations (dernier recours)...")
+    print("    🖼️ Pollinations (fallback IA)...")
     M._i_pollinations(prompt_complet, chemin)
-
-def generer_fond_story_local(texte: str, chemin: str) -> None:
-    """Fond story 1080x1920 : dégradé brun + texte crème + logo cercle."""
-    w, h = 1080, 1920
-    img = Image.new("RGB", (w, h))
-    draw = ImageDraw.Draw(img)
-    stops = [(0.0, (92, 64, 51)), (0.5, (62, 39, 35)), (1.0, (26, 18, 11))]
-    for y in range(h):
-        t = y / h
-        for i in range(len(stops) - 1):
-            t0, c0 = stops[i]; t1, c1 = stops[i + 1]
-            if t0 <= t <= t1:
-                f = (t - t0) / (t1 - t0)
-                draw.line([(0, y), (w, y)],
-                          fill=tuple(int(c0[j] + (c1[j] - c0[j]) * f) for j in range(3)))
-                break
-    margin, max_w = 100, w - 200
-    size = 58
-    texte_propre = M.clean_text(texte)
-    while size >= 36:
-        font = get_font(size, bold=True)
-        lines = wrap_text_pillow(texte_propre, font, max_w)
-        ascent, descent = font.getmetrics()
-        stride = ascent + descent + 12
-        total_h = stride * len(lines)
-        if total_h <= h - 2 * margin:
-            break
-        size -= 4
-    y = (h - total_h) // 2
-    for ln in lines:
-        lw = draw.textlength(ln, font=font)
-        draw.text(((w - lw) // 2, y), ln, font=font, fill=(212, 196, 168))
-        y += stride
-    if os.path.isfile(PROFILE_IMAGE_PATH):
-        try:
-            s = 140
-            logo = Image.open(PROFILE_IMAGE_PATH).convert("RGBA").resize((s, s), Image.LANCZOS)
-            mask = Image.new("L", (s, s), 0)
-            ImageDraw.Draw(mask).ellipse((0, 0, s, s), fill=255)
-            img.paste(logo, (w - s - margin, h - s - 340), mask)
-        except Exception:
-            pass
-    img.save(chemin)
+    M._crop_resize_pillow(Image.open(chemin), size).save(chemin)
+    print(f"    ✅ Pollinations ({os.path.getsize(chemin):,} o)")
 
 # ══════════════════════════════════════════
 # PARABOLE
@@ -180,33 +164,61 @@ def generer_slides(sujet: str, textes: dict) -> list:
         chemins.append(chemin)
     return chemins
 
+def _upload_photo_non_publiee(chemin: str) -> str:
+    with open(chemin, "rb") as f:
+        r = M._req("POST", f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/photos",
+                   data={"published": "false", "access_token": M.FB_PAGE_ACCESS_TOKEN},
+                   files={"source": (os.path.basename(chemin), f, "image/png")}, timeout=M.TIMEOUT)
+    pid = r.json().get("id")
+    if not pid: raise ValueError(f"Upload échoué : {r.json()}")
+    return pid
+
+def _post_a_des_images(post_id: str) -> bool:
+    """Vérifie que le post publié contient bien des photos."""
+    try:
+        r = M._req("GET", f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{post_id}",
+                   params={"fields": "attachments", "access_token": M.FB_PAGE_ACCESS_TOKEN},
+                   timeout=M.TIMEOUT)
+        att = r.json().get("attachments", {}).get("data", [])
+        ok = any(a.get("type") in ("photo", "album", "video", "share") for a in att)
+        print(f"  🔎 Vérification post : {'images présentes ✅' if ok else 'AUCUNE image ❌'}")
+        return ok
+    except Exception as e:
+        print(f"  ⚠️ Vérification impossible ({e}) → on garde le post")
+        return True
+
 def publier_carrousel(chemins: list, legende: str) -> dict:
     if DRY_RUN:
         print("  🧪 DRY RUN — carrousel sauté."); return {"id": "dry-run"}
-    ids = []
-    for c in chemins:
-        with open(c, "rb") as f:
-            r = M._req("POST", f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/photos",
-                       data={"published": "false", "access_token": M.FB_PAGE_ACCESS_TOKEN},
-                       files={"source": (os.path.basename(c), f, "image/png")}, timeout=M.TIMEOUT)
-        pid = r.json().get("id")
-        if not pid: raise ValueError(f"Réponse FB : {r.json()}")
-        ids.append(pid)
+    ids = [_upload_photo_non_publiee(c) for c in chemins]
     attached = [f"{M.FB_PAGE_ID}_{pid}" for pid in ids]
+    res = None
     try:
         r = M._req("POST", f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/feed",
                    data={"message": legende, "attached_images": json.dumps(attached),
                          "access_token": M.FB_PAGE_ACCESS_TOKEN}, timeout=M.TIMEOUT)
         res = r.json()
         if "id" not in res: raise ValueError(res)
-        return res
     except Exception as e:
-        print(f"  ⚠️ Carrousel échoué ({e}) → fallback photo unique")
-        with open(chemins[0], "rb") as f:
-            r = M._req("POST", f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/photos",
-                       data={"caption": legende, "access_token": M.FB_PAGE_ACCESS_TOKEN},
-                       files={"source": (os.path.basename(chemins[0]), f, "image/png")}, timeout=M.TIMEOUT)
-        return r.json()
+        print(f"  ⚠️ Carrousel échoué ({e})")
+    # AUTO-VÉRIFICATION : si le post est sorti SANS images → suppression + photo garantie
+    if res and _post_a_des_images(res["id"]):
+        return res
+    if res:
+        print("  🗑️ Post texte seul détecté → suppression...")
+        try:
+            M._req("DELETE", f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{res['id']}",
+                   params={"access_token": M.FB_PAGE_ACCESS_TOKEN}, timeout=M.TIMEOUT)
+        except Exception as e:
+            print(f"  ⚠️ Suppression : {e}")
+    print("  📷 Republication garantie avec photo (slide 1)...")
+    with open(chemins[0], "rb") as f:
+        r = M._req("POST", f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/photos",
+                   data={"caption": legende, "access_token": M.FB_PAGE_ACCESS_TOKEN},
+                   files={"source": (os.path.basename(chemins[0]), f, "image/png")}, timeout=M.TIMEOUT)
+    out = r.json()
+    if "id" not in out: raise ValueError(out)
+    return out
 
 def publier_parabole() -> dict:
     sujet = random.choice(SUJETS_PAR_PILIER["parabole"])
@@ -234,36 +246,34 @@ def publier_texte_vis(pilier: str) -> dict:
     if DRY_RUN:
         print("  🧪 DRY RUN — texte sauté."); return {"id": "dry-run"}
     ep = f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/photos"
-    try:
-        with open(chemin, "rb") as f:
-            r = M._req("POST", ep, data={"caption": legende, "access_token": M.FB_PAGE_ACCESS_TOKEN},
-                       files={"source": (os.path.basename(chemin), f, "image/png")}, timeout=M.TIMEOUT)
-        res = r.json()
-        if "id" not in res: raise ValueError(res)
-        return res
-    except requests.exceptions.HTTPError as e:
-        raise M.fb_error(e, "post texte vis") from e
+    with open(chemin, "rb") as f:
+        r = M._req("POST", ep, data={"caption": legende, "access_token": M.FB_PAGE_ACCESS_TOKEN},
+                   files={"source": (os.path.basename(chemin), f, "image/png")}, timeout=M.TIMEOUT)
+    res = r.json()
+    if "id" not in res: raise ValueError(res)
+    return res
 
 # ══════════════════════════════════════════
-# STORY
+# STORY — fond AQUARELLE IA + texte crème
 # ══════════════════════════════════════════
 def publier_story_vis() -> dict:
     texte = random.choice(SUJETS_PAR_PILIER["story"])
     print(f"📌 Story : {texte}")
     chemin = "vis_story.png"
-    generer_fond_story_local(texte, chemin)
+    prompt = ("Serene watercolor landscape at golden hour, rolling brown hills, winding cream "
+              "path, blotchy warm sun in hazy sky, a single small tree, heavy cold press paper "
+              "grain, 1950s European children's book illustration, monochrome brown palette, "
+              "no characters, vertical composition, large calm sky")
+    print("  🖼️ Fond story IA (aquarelle brune)...")
+    image_vis_garantie(prompt, chemin, size=(STORY_W, STORY_H))
     img = ajouter_grain(Image.open(chemin)); img.save(chemin)
+    incruste_bas_story(chemin, texte)
     if DRY_RUN:
         print("  🧪 DRY RUN — story sautée."); return {"id": "dry-run"}
-    ep_photos = f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/photos"
-    with open(chemin, "rb") as f:
-        r = M._req("POST", ep_photos, data={"published": "false", "access_token": M.FB_PAGE_ACCESS_TOKEN},
-                   files={"source": (os.path.basename(chemin), f, "image/png")}, timeout=M.TIMEOUT)
-    photo_id = r.json().get("id")
-    if not photo_id: raise ValueError(f"Upload story échoué : {r.json()}")
-    print(f"  ✅ Photo story uploadée : {photo_id}")
-    ep_story = f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/photo_stories"
-    r = M._req("POST", ep_story, data={"photo_id": photo_id, "access_token": M.FB_PAGE_ACCESS_TOKEN}, timeout=M.TIMEOUT)
+    pid = _upload_photo_non_publiee(chemin)
+    print(f"  ✅ Photo story uploadée : {pid}")
+    r = M._req("POST", f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/photo_stories",
+               data={"photo_id": pid, "access_token": M.FB_PAGE_ACCESS_TOKEN}, timeout=M.TIMEOUT)
     res = r.json()
     if "id" not in res: raise ValueError(f"Publication story échouée : {res}")
     print(f"  ✅ Story publiée : {res['id']}")
