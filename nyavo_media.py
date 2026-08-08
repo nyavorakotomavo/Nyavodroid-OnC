@@ -1344,3 +1344,64 @@ def _t_cloudflare(prompt: str) -> str:
     
     _t_cloudflare.idx = (_t_cloudflare.idx + 1) % n
     raise RuntimeError(f"Cloudflare texte KO (tous comptes/modèles) : {sanitize_log(str(derniere))}")
+
+
+# ══════════════════════════════════════════
+# VIS — FOND STORY (1080x1920, brun aquarelle)
+# ══════════════════════════════════════════
+def generer_fond_story_vis(texte: str, chemin: str, logo_path: str = "") -> None:
+    """Génère un fond de story 1080x1920 avec dégradé brun + texte crème + logo."""
+    w, h = 1080, 1920
+    # Dégradé vertical brun : mocha → chocolate → espresso
+    img = Image.new("RGB", (w, h))
+    draw = ImageDraw.Draw(img)
+    stops = [
+        (0.0, (92, 64, 51)),    # mocha (haut)
+        (0.5, (62, 39, 35)),    # chocolate (milieu)
+        (1.0, (26, 18, 11)),    # espresso (bas)
+    ]
+    for y in range(h):
+        t = y / h
+        # Interpolation entre stops
+        for i in range(len(stops) - 1):
+            t0, c0 = stops[i]
+            t1, c1 = stops[i + 1]
+            if t0 <= t <= t1:
+                f = (t - t0) / (t1 - t0)
+                r = int(c0[0] + (c1[0] - c0[0]) * f)
+                g = int(c0[1] + (c1[1] - c0[1]) * f)
+                b = int(c0[2] + (c1[2] - c0[2]) * f)
+                draw.line([(0, y), (w, y)], fill=(r, g, b))
+                break
+    # Texte crème centré verticalement
+    font_size = 58
+    texte_propre = clean_text(texte)
+    margin = 100
+    max_w = w - 2 * margin
+    while font_size >= 36:
+        font = get_font(font_size, bold=True)
+        lines = wrap_text_pillow(texte_propre, font, max_w)
+        ascent, descent = font.getmetrics()
+        stride = ascent + descent + 12
+        total_h = stride * len(lines)
+        if total_h <= h - 2 * margin:
+            break
+        font_size -= 4
+    y = (h - total_h) // 2
+    cream = (212, 196, 168)
+    for ln in lines:
+        lw = draw.textlength(ln, font=font)
+        x = (w - lw) // 2
+        draw.text((x, y), ln, font=font, fill=cream)
+        y += stride
+    # Logo cercle plat en bas à droite
+    if logo_path and os.path.isfile(logo_path):
+        try:
+            size = 140
+            logo = Image.open(logo_path).convert("RGBA").resize((size, size), Image.LANCZOS)
+            mask = Image.new("L", (size, size), 0)
+            ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
+            img.paste(logo, (w - size - margin, h - size - margin - 200), mask)
+        except Exception:
+            pass
+    img.save(chemin)
