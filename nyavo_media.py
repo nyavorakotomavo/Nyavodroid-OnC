@@ -1334,11 +1334,11 @@ def _t_cloudflare(prompt: str) -> str:
                 if not data.get("success"):
                     raise ValueError(f"Cloudflare erreur : {data}")
                 res = data.get('result', {})
-                txt = res.get('response', "") if isinstance(res, dict) else str(res)
-                if not txt:
-                    raise ValueError(f"Cloudflare réponse vide : {data}")
-                _t_cloudflare.idx = (idx + 1) % n
-                print(f"    ☁️ Cloudflare texte OK (compte #{idx+1}/{n}, modèle {model})")
+                txt = res.get('response', "") if isinstance(res, dict) else res
+                if isinstance(txt, dict):
+                    txt = txt.get('content', "") if 'content' in txt else str(txt)
+                txt = str(txt) if txt else ""
+                if not txt.strip():
                 return clean_text(txt)
             except Exception as e:
                 derniere = e
