@@ -9,12 +9,9 @@ on:
         description: "Type de publication"
         type: choice
         default: aleatoire
-        options:
-          - aleatoire
-          - parabole
-          - morale
-          - question
-          - story
+        options: [aleatoire, parabole, morale, question, story]
+permissions:
+  contents: write
 jobs:
   publier:
     runs-on: ubuntu-latest
@@ -29,6 +26,10 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+      - name: Identité git (auto-commit historique)
+        run: |
+          git config --global user.name "vis-bot"
+          git config --global user.email "vis-bot@users.noreply.github.com"
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
       - name: Dépendances + ffmpeg

@@ -5,7 +5,7 @@ Nyavodroid — VIS : moteur de publication (définitif v2).
 - Story : fond AQUARELLE IA (Cloudflare) + texte crème, jamais de fond uni Pillow.
 VIS_FORCE_PILIER / VIS_EXCLUDE gérés. AUCUN fact_checker.
 """
-import os, json, random, sys, time, requests, subprocess
+import os, re, json, random, sys, time, requests, subprocess
 from datetime import datetime, timedelta
 from PIL import Image, ImageDraw
 import nyavo_media as M
