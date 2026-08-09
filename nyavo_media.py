@@ -225,7 +225,7 @@ def _t_mistral(prompt: str) -> str:
         headers={"Authorization": f"Bearer {MISTRAL_API_KEY}", "Content-Type": "application/json"},
         json_data={"model": "mistral-small-latest",
                    "messages": [{"role": "user", "content": prompt}],
-                   "max_tokens": 500, "temperature": 0.9},
+                   "max_tokens": 500, "temperature": 0.4},
         timeout=30,
     )
     return clean_text(r.json()["choices"][0]["message"]["content"])
@@ -237,7 +237,7 @@ def _t_together(prompt: str) -> str:
         headers={"Authorization": f"Bearer {TOGETHER_API_KEY}", "Content-Type": "application/json"},
         json_data={"model": TOGETHER_TEXT_MODEL,
                    "messages": [{"role": "user", "content": prompt}],
-                   "max_tokens": 500, "temperature": 0.9},
+                   "max_tokens": 500, "temperature": 0.4},
         timeout=30,
     )
     return clean_text(r.json()["choices"][0]["message"]["content"])
@@ -251,7 +251,7 @@ def _t_gemini(prompt: str, gemini_key: str) -> str:
             r = _req(
                 "POST", url, headers={"Content-Type": "application/json"},
                 json_data={"contents": [{"parts": [{"text": prompt}]}],
-                           "generationConfig": {"maxOutputTokens": 500, "temperature": 0.9}},
+                           "generationConfig": {"maxOutputTokens": 500, "temperature": 0.4}},
                 timeout=30,
             )
             data = r.json()
@@ -275,7 +275,7 @@ def _t_gemini(prompt: str, gemini_key: str) -> str:
 
 def _t_hf(prompt: str) -> str:
     body = {"inputs": prompt,
-            "parameters": {"max_new_tokens": 500, "temperature": 0.9, "return_full_text": False}}
+            "parameters": {"max_new_tokens": 500, "temperature": 0.4, "return_full_text": False}}
     if "instruct" in HF_TEXT_MODEL.lower():
         body["inputs"] = f"[INST] {prompt} [/INST]"
     r = _req(
@@ -1319,7 +1319,7 @@ def _t_cloudflare(prompt: str) -> str:
                     "POST", url,
                     headers={"Authorization": f"Bearer {tok}", "Content-Type": "application/json"},
                     json_data={"messages": [{"role": "user", "content": prompt}],
-                               "max_tokens": 500, "temperature": 0.9},
+                               "max_tokens": 500, "temperature": 0.4},
                     timeout=30, max_retries=1,
                 )
                 data = r.json()

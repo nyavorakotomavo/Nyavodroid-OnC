@@ -175,7 +175,7 @@ def texte_vis_garantie(prompt: str, tag: str = "") -> str:
 
 def image_vis_garantie(prompt: str, chemin: str, size=(SLIDE, SLIDE)) -> None:
     """Image IA : Cloudflare d'abord, Pollinations en fallback."""
-    prompt_complet = M.clean_text(prompt) + ", brown monochrome watercolor, 1950s children book illustration, heavy paper grain, no text"
+    prompt_complet = M.clean_text(prompt) + ", in the poetic style of Michael Dudok de Wit (Ella Oscar and Hoo), warm hand-painted watercolor on textured cold-press paper, visible paper grain and soft pigment blooms, gentle golden hour light, tender melancholic mood, limited earthy palette of cream caramel ochre sienna and deep espresso brown, soft rounded childlike shapes, delicate ink outlines, dreamy atmospheric haze, award-winning picture book illustration, highly detailed, no text no letters no words"
     if M.CLOUDFLARE_CREDS:
         try:
             print("    ☁️ Cloudflare image (IA)...")
@@ -244,9 +244,13 @@ def _supprimer_post(post_id: str) -> None:
 def generer_textes_parabole(sujet: str) -> dict:
     prompt = (
         "Tu es un auteur d'albums jeunesse pour adultes. "
-        f"{TON_EDITORIAL}\nSujet : {sujet}\n"
-        'Réponds UNIQUEMENT en JSON : {"titre": "max 6 mots", '
-        '"morale": "max 12 mots", "question": "question bienveillante max 12 mots"}'
+        f"{TON_EDITORIAL}\nSujet : {sujet}\n\n"
+        "CONSIGNE ABSOLUE : réponds EXCLUSIVEMENT avec un objet JSON valide, sans aucun texte avant ni après, "
+        "sans markdown, sans backticks. Le JSON doit contenir exactement ces 3 clés :\n"
+        '{"titre": "un titre poétique de 3 à 6 mots lié au sujet", '
+        '"morale": "une morale originale de 6 à 12 mots inspirée du sujet", '
+        '"question": "une question bienveillante et unique de 6 à 12 mots pour le lecteur"}\n'
+        "La morale et la question doivent être INÉDITES et spécifiques au sujet, jamais génériques."
     )
     print("  📝 Génération titres/morale/question...")
     brut = texte_vis_garantie(prompt, "[parabole]").strip()
@@ -272,10 +276,11 @@ def generer_textes_parabole(sujet: str) -> dict:
             return json.loads(m.group())
         except Exception:
             pass
-    print("  ⚠️ JSON invalide → valeurs par défaut")
-    return {"titre": sujet.split("(")[0].strip()[:40],
-            "morale": "Les petits pas font les grands chemins.",
-            "question": "Quel petit pas fais-tu aujourd'hui ?"}
+    print("  ⚠️ JSON invalide → valeurs dérivées du sujet")
+    base = sujet.split("(")[0].strip()
+    return {"titre": base[:40],
+            "morale": f"Autour de {base.lower()}, chaque petit pas compte vraiment.",
+            "question": f"Que t'évoque {base.lower()} dans ta vie aujourd'hui ?"}
 
 def generer_slides(sujet: str, textes: dict) -> list:
     chemins = []
