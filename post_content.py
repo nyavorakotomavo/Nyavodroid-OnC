@@ -134,7 +134,11 @@ def generer_post_texte_seul(pilier: str) -> tuple[str, str]:
     print(f"  ✅ Texte : « {texte} »")
 
     chemin_image = "post_text_image.png"
-    M.generer_fond_texte_seul(texte, chemin_image)
+    fond = "post_text_fond.png"
+    if M.get_image_from_pexels(sujet, fond, size=(1080, 1080)):
+        M.incruster_texte_pillow(fond, "", texte, "", "", chemin_image, target_size=(1080, 1080))
+    else:
+        M.generer_fond_texte_seul(texte, chemin_image)
     return texte, chemin_image
 
 
@@ -210,6 +214,7 @@ def publier_image_texte(pilier: str) -> dict:
         '"description": "2 phrases explicatives", '
         '"visuel": "concret ou conceptuel", '
         '"image_prompt": "EN ANGLAIS, zero text, abstract if tech", '
+        '"pexels_query": "EN ANGLAIS 2-4 mots concrets (objets reels) pour Pexels", '
         '"source": "Organisme + Année"}\n\n'
         f"Sujet : {sujet}."
     )
@@ -224,6 +229,7 @@ def publier_image_texte(pilier: str) -> dict:
         contexte, fait_choc = d.get("contexte", ""), d.get("fait_choc", "")
         consequence, description = d.get("consequence", ""), d.get("description", "")
         source, visuel, image_prompt = d.get("source", ""), d.get("visuel", "conceptuel"), d.get("image_prompt", "")
+        pexels_query = d.get("pexels_query", "")
     except Exception as e:
         print(f"  ⚠️ JSON invalide malgré faits vérifiés : {e}")
         sys.exit(0)
@@ -231,19 +237,15 @@ def publier_image_texte(pilier: str) -> dict:
     # ══════════════════════════════════════════
     # ÉTAPE 3 : IMAGE (Pexels/IA anti-texte)
     # ══════════════════════════════════════════
-    TEXT_TRIGGER_WORDS = ["code", "compiler", "traduction", "translation", "language", "langage", 
-                          "database", "sql", "json", "api", "interface", "ui", "screen", "écran"]
-    force_pexels = any(word in sujet.lower() for word in TEXT_TRIGGER_WORDS)
     img_prompt = image_prompt or f"abstract visual metaphor for {sujet}, no text"
-
-    if force_pexels:
-        print(f"  🖼️ [Pexels] Forcé (sujet à risque texte)")
-        if not M.get_image_from_pexels(sujet, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT)):
-            M.image_avec_fallback(img_prompt, GEMINI_API_KEY, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT))
-    elif visuel == "concret":
-        if not M.get_image_from_pexels(sujet, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT)):
-            M.image_avec_fallback(img_prompt, GEMINI_API_KEY, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT))
-    else:
+    print("  [Pexels] Image reelle prioritaire : " + sujet)
+    pexels_ok = False
+    for q in [x for x in (pexels_query, sujet) if x]:
+        if M.get_image_from_pexels(q, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT)):
+            pexels_ok = True
+            break
+    if not pexels_ok:
+        print("  Pexels indisponible -> fallback IA (dernier recours)")
         M.image_avec_fallback(img_prompt, GEMINI_API_KEY, IMAGE_PATH, size=(POST_WIDTH, POST_HEIGHT))
 
     # ══════════════════════════════════════════

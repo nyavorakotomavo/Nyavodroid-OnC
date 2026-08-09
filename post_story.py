@@ -91,38 +91,14 @@ def generer_texte_story():
     return pilier, sujet, fait_choc, consequence, source, visuel, image_prompt
 
 
-def generer_image_story(pilier, sujet, chemin, visuel, image_prompt):
+def generer_image_story(pilier, sujet, chemin, visuel, image_prompt, pexels_query=""):
     img_prompt = image_prompt or f"abstract visual metaphor for {sujet}, no text"
-    
-    # Double sécurité : même si visuel="conceptuel", on tente Pexels d'abord pour les sujets tech
-    TEXT_TRIGGER_WORDS = ["code", "compiler", "traduction", "translation", "language", "langage", 
-                          "database", "sql", "json", "api", "interface", "ui", "screen", "écran"]
-    if any(word in sujet.lower() for word in TEXT_TRIGGER_WORDS):
-        print(f"  🖼️ [Pexels] Tentative forcée (sujet à risque texte) : {sujet}")
-        if M.get_image_from_pexels(sujet, chemin, size=(STORY_WIDTH, STORY_HEIGHT)):
-            print("  ✅ [Pexels] photo réelle utilisée (texte évité)")
+    print("  [Pexels] photo reelle prioritaire : " + sujet)
+    for q in [x for x in (pexels_query, sujet) if x]:
+        if M.get_image_from_pexels(q, chemin, size=(STORY_WIDTH, STORY_HEIGHT)):
+            print("  [Pexels] photo reelle utilisee")
             return
-    
-    if visuel == "concret":
-        print(f"  🖼️ [Pexels] photo réelle : {sujet}")
-        if M.get_image_from_pexels(sujet, chemin, size=(STORY_WIDTH, STORY_HEIGHT)):
-            print("  ✅ [Pexels] photo réelle utilisée")
-            return
-        print("  ⚠️ [Pexels] échec → IA avec métaphores abstraites")
-    else:
-        print("  🎨 [IA] visuel conceptuel (métaphores abstraites, zéro texte)")
-    
-    M.image_avec_fallback(img_prompt, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
-
-def generer_image_story(pilier, sujet, chemin, visuel, image_prompt):
-    img_prompt = image_prompt or f"concept related to {sujet}"
-    if visuel == "concret":
-        print(f"  🖼️  [Pexels] photo réelle : {sujet}")
-        if M.get_image_from_pexels(sujet, chemin, size=(STORY_WIDTH, STORY_HEIGHT)):
-            print("  ✅ [Pexels] photo réelle utilisée"); return
-        print("  ⚠️  [Pexels] échec → IA alignée mots-clés")
-    else:
-        print("  🎨 [IA] visuel conceptuel aligné mots-clés")
+    print("  Pexels echec -> fallback IA (dernier recours)")
     M.image_avec_fallback(img_prompt, GEMINI_API_KEY, chemin, size=(STORY_WIDTH, STORY_HEIGHT))
 
 def incruster_texte_hierarchique(image_in, contexte, fait_choc, consequence, source, image_out):
