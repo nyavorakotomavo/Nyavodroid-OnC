@@ -58,6 +58,10 @@ def clean_backslash(t: str) -> str:
 
 def choisir_type_contenu() -> str:
     """Décide du format en priorisant la stratégie NAnaly, fallback sur l'heure."""
+    force = os.environ.get("FORCE_FORMAT", "").strip().lower()
+    if force in ("texte_seul", "image_texte", "reel"):
+        print(f"  Format force manuellement : {force}")
+        return force
     from charger_strategie import charger_strategie
     strategie = charger_strategie()
 

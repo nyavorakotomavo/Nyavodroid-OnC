@@ -1,11 +1,21 @@
-name: Auto-post Nyavodroid — Multi-formats
+name: Auto-post Nyavodroid - Multi-formats
 
 on:
   schedule:
     - cron: "0 7 * * 1-6"
     - cron: "30 9 * * 1-6"
     - cron: "0 17 * * 0,1-6"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      format:
+        description: "Type de post (manuel uniquement)"
+        type: choice
+        default: auto
+        options:
+          - auto
+          - texte_seul
+          - image_texte
+          - reel
 
 jobs:
   publish:
@@ -17,12 +27,12 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Dépendances système
+      - name: Dependances systeme
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
 
-      - name: Dépendances Python
+      - name: Dependances Python
         run: pip install "requests>=2.31.0" "Pillow>=10.0.0"
 
       - name: Publier le contenu
@@ -44,4 +54,5 @@ jobs:
           FREEAI_API_KEY: ${{ secrets.FREEAI_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          FORCE_FORMAT: ${{ github.event.inputs.format }}
         run: python post_content.py
