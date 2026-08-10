@@ -271,18 +271,21 @@ def incruste_slide(chemin: str, texte: str, size: int = 64) -> None:
 
 def generer_textes_parabole(sujet: str) -> dict:
     prompt = (
-        "Tu écris un carrousel Instagram motivationnel en français, style narration visuelle.\n"
+        "Tu écris un carrousel Instagram motivationnel en français, narration visuelle.\n"
         f"Sujet de la parabole : {sujet}\n\n"
-        "CONSIGNE ABSOLUE : réponds EXCLUSIVEMENT avec un objet JSON valide, sans texte avant/après, "
-        "sans markdown. Le JSON doit contenir exactement ces 7 clés (textes COURTS, percutants, 2-7 mots chacun) :\n"
-        '{"s1_accroche": "phrase d\'accroche choc entre guillemets", '
-        '"s2": "texte scène 2, 3-6 mots", '
-        '"s3": "texte scène 3, 3-6 mots", '
-        '"s4_declic": "le déclic, 3-6 mots", '
-        '"s5": "texte scène 5, 3-6 mots", '
-        '"s6_morale": "la morale puissante, 5-10 mots", '
-        '"caption": "légende complète 2 phrases + question au lecteur"}\n'
-        "Chaque texte doit être INÉDIT, spécifique au sujet, émotionnel. Jamais générique."
+        "CONSIGNE ABSOLUE : réponds EXCLUSIVEMENT avec un objet JSON valide, sans texte avant/après, sans markdown.\n"
+        "Pour CHAQUE slide tu donnes 2 choses : le texte court affiché (txt) ET la description visuelle précise de "
+        "l'image (img) qui doit illustrer CONCRÈTEMENT la scène (objets, personnages, action, décor).\n"
+        "L'image DOIT montrer littéralement le sujet (ex: sujet phare/tempête -> un vrai phare battu par des vagues énormes sous un ciel d'orage).\n"
+        'Format JSON exact :\n'
+        '{"s1": {"txt": "accroche choc entre guillemets, 2-5 mots", "img": "description visuelle scène 1 en anglais, 25 mots"}, '
+        '"s2": {"txt": "3-6 mots", "img": "scene 2 en anglais, 25 mots"}, '
+        '"s3": {"txt": "3-6 mots", "img": "scene 3 en anglais, 25 mots"}, '
+        '"s4": {"txt": "le declic, 3-6 mots", "img": "scene 4 en anglais, 25 mots"}, '
+        '"s5": {"txt": "3-6 mots", "img": "scene 5 en anglais, 25 mots"}, '
+        '"s6": {"txt": "morale puissante 5-10 mots", "img": "scene finale en anglais, 25 mots"}, '
+        '"caption": "legende 2 phrases + question au lecteur"}\n'
+        "Les 6 images doivent raconter une histoire visuelle cohérente et littérale du sujet. Textes inédits, jamais génériques."
     )
     print("  📝 Génération titres/morale/question...")
     brut = texte_vis_garantie(prompt, "[parabole]").strip()
@@ -310,30 +313,33 @@ def generer_textes_parabole(sujet: str) -> dict:
             pass
     print("  ⚠️ JSON invalide → valeurs dérivées du sujet")
     base = sujet.split("(")[0].strip()
+    base_en = base.lower()
     return {
-        "s1_accroche": f"\"{base}.\"",
-        "s2": "Tout commence petit.",
-        "s3": "Personne n'y croit.",
-        "s4_declic": "Et pourtant...",
-        "s5": "Le temps fait son œuvre.",
-        "s6_morale": f"{base} : la patience gagne toujours.",
+        "s1": {"txt": f"\"{base}.\"", "img": f"a dramatic literal scene of {base_en}, cinematic golden light"},
+        "s2": {"txt": "Tout commence petit.", "img": f"tiny beginning of {base_en}, close-up, warm light"},
+        "s3": {"txt": "Personne n'y croit.", "img": f"doubt and struggle around {base_en}, moody atmosphere"},
+        "s4": {"txt": "Et pourtant...", "img": f"the turning point about {base_en}, ray of hope"},
+        "s5": {"txt": "Le temps fait son œuvre.", "img": f"transformation of {base_en}, golden hour"},
+        "s6": {"txt": f"{base} : la patience gagne.", "img": f"serene resolution of {base_en}, peaceful wide shot"},
         "caption": f"{base}. Et toi, que laisses-tu grandir doucement ? #Motivation",
     }
 
 def generer_slides(sujet: str, textes: dict) -> list:
     chemins = []
-    for i, (acte, visuel) in enumerate(SCENES_PARABOLE, 1):
+    for i in range(1, 7):
         chemin = f"vis_slide_{i}.png"
         if i > 1:
             print(f"  ⏳ Pause : {DELAY_ENTRE_SLIDES}s...")
             time.sleep(DELAY_ENTRE_SLIDES)
-        print(f"  🖼️ Slide {i}/6 [{acte}] (IA)...")
-        prompt = (f"Scene {i}/6 — {acte}. {visuel}. Story theme: {sujet}. "
-                  "Square format, same character design across all scenes.")
+        bloc = textes.get(f"s{i}", {})
+        if isinstance(bloc, str):
+            bloc = {"txt": bloc, "img": ""}
+        txt_slide = bloc.get("txt", "")
+        desc_img = bloc.get("img", f"scene {i} about {sujet}")
+        print(f"  🖼️ Slide {i}/6 (IA) : {desc_img[:60]}...")
+        prompt = f"{desc_img}, square 1:1 composition, consistent art style across the series"
         image_vis_garantie(prompt, chemin, size=(SLIDE, SLIDE))
         img = ajouter_grain(Image.open(chemin)); img.save(chemin)
-        cle = ["s1_accroche", "s2", "s3", "s4_declic", "s5", "s6_morale"][i - 1]
-        txt_slide = textes.get(cle, "")
         if txt_slide:
             incruste_slide(chemin, txt_slide, size=70 if i in (1, 6) else 60)
         chemins.append(chemin)
@@ -344,36 +350,47 @@ def publier_parabole() -> dict:
     print(f"📌 Sujet : {sujet}")
     textes = generer_textes_parabole(sujet)
     chemins = generer_slides(sujet, textes)
-    cap = textes.get("caption", textes.get("s6_morale", ""))
+    cap = textes.get("caption", "")
+    if not cap:
+        s6 = textes.get("s6", {})
+        cap = s6.get("txt", "") if isinstance(s6, dict) else str(s6)
     legende = f"{cap}\n\n#DeveloppementPersonnel #LeconDeVie #HistoireIllustrée #Motivation"
     print(f"📌 Légende :\n{legende}")
-    # 1) Post photo slide 1 GARANTI
-    res_photo = _publier_photo(chemins[0], legende)
-    # 2) Carrousel 6 slides en bonus
+
+    # ── Méthode 1 : album 6 photos (s'affiche en grille sur les Pages) ──
     try:
-        ids = [_upload_photo_non_publiee(c) for c in chemins]
-        formats = [("préfixé", [f"{M.FB_PAGE_ID}_{p}" for p in ids]), ("brut", ids)]
-        for nom, attached in formats:
-            try:
-                print(f"  📤 Tentative carrousel (format {nom})...")
-                r = M._req("POST", f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/feed",
-                           data={"message": legende, "attached_images": json.dumps(attached),
-                                 "access_token": M.FB_PAGE_ACCESS_TOKEN}, timeout=M.TIMEOUT)
-                res = r.json()
-                if "id" not in res: raise ValueError(res)
-                if _post_a_des_images(res["id"]):
-                    print("  ✅ Carrousel 6 slides OK → suppression du post simple")
-                    _supprimer_post(res_photo["id"])
-                    enregistrer_publication("parabole", sujet)
-                    return res
-                _supprimer_post(res["id"])
-            except Exception as e:
-                print(f"  ⚠️ Carrousel format {nom} échoué : {e}")
+        print("  📚 Tentative ALBUM 6 slides...")
+        r = M._req("POST", f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{M.FB_PAGE_ID}/albums",
+                   data={"name": cap[:100] or "Parabole vis", "message": legende,
+                         "access_token": M.FB_PAGE_ACCESS_TOKEN}, timeout=M.TIMEOUT)
+        album = r.json()
+        album_id = album.get("id")
+        if not album_id: raise ValueError(album)
+        for ch in chemins:
+            with open(ch, "rb") as f:
+                M._req("POST", f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{album_id}/photos",
+                       data={"access_token": M.FB_PAGE_ACCESS_TOKEN},
+                       files={"source": (os.path.basename(ch), f, "image/png")}, timeout=M.TIMEOUT)
+        # L'album crée un post ; on récupère son ID via le lien de l'album
+        r2 = requests.get(f"https://graph.facebook.com/{M.GRAPH_API_VERSION}/{album_id}",
+                          params={"fields": "link,id", "access_token": M.FB_PAGE_ACCESS_TOKEN}, timeout=M.TIMEOUT)
+        print(f"  ✅ Album publié : {album_id} (6 slides en grille)")
+        enregistrer_publication("parabole", sujet)
+        return {"id": album_id, "type": "album"}
     except Exception as e:
-        print(f"  ⚠️ Carrousel abandonné : {e}")
-    print("  📌 On garde le post photo slide 1 (image IA garantie).")
+        print(f"  ⚠️ Album échoué ({e}) → fallback photos individuelles")
+
+    # ── Méthode 2 fallback : 6 posts photo individuels (chacun visible) ──
+    print("  📷 Fallback : 6 posts photo individuels...")
+    dernier = None
+    for idx, ch in enumerate(chemins, 1):
+        s = textes.get(f"s{idx}", {})
+        txt = s.get("txt", "") if isinstance(s, dict) else str(s)
+        leg_i = f"{txt}\n\n({idx}/6) {cap}\n\n#DeveloppementPersonnel #Motivation" if idx == 1 else f"({idx}/6) {txt}\n\n#Motivation"
+        dernier = _publier_photo(ch, leg_i)
+        if idx < 6: time.sleep(3)
     enregistrer_publication("parabole", sujet)
-    return res_photo
+    return dernier
 
 # ══════════════════════════════════════════
 # MORALE / QUESTION — Pillow (dégradé brun + texte)
