@@ -66,7 +66,7 @@ def sauvegarder_historique(hist: dict) -> None:
 
 def sujets_disponibles(pilier: str) -> list:
     hist = charger_historique()
-    cutoff = datetime.now() - timedelta(days=30)
+    cutoff = datetime.now() - timedelta(days=60)
     deja = {p["sujet"] for p in hist["publications"]
             if p["pilier"] == pilier and datetime.fromisoformat(p["date"]) > cutoff}
     dispo = [s for s in SUJETS_PAR_PILIER[pilier] if s not in deja]
@@ -175,7 +175,7 @@ def texte_vis_garantie(prompt: str, tag: str = "") -> str:
 
 def image_vis_garantie(prompt: str, chemin: str, size=(SLIDE, SLIDE)) -> None:
     """Image IA : Cloudflare d'abord, Pollinations en fallback."""
-    prompt_complet = M.clean_text(prompt) + ", in the poetic style of Michael Dudok de Wit (Ella Oscar and Hoo), warm hand-painted watercolor on textured cold-press paper, visible paper grain and soft pigment blooms, gentle golden hour light, tender melancholic mood, limited earthy palette of cream caramel ochre sienna and deep espresso brown, soft rounded childlike shapes, delicate ink outlines, dreamy atmospheric haze, award-winning picture book illustration, highly detailed, no text no letters no words"
+    prompt_complet = M.clean_text(prompt) + ", cinematic digital illustration, warm golden amber and deep brown color grading, dramatic volumetric god rays, rich atmospheric haze, highly detailed storytelling scene, emotional narrative composition, soft painterly rendering with crisp focal subject, moody inspirational mood, trending motivational art style, 4k, no text no letters no words no captions"
     if M.CLOUDFLARE_CREDS:
         try:
             print("    ☁️ Cloudflare image (IA)...")
@@ -241,16 +241,48 @@ def _supprimer_post(post_id: str) -> None:
 # ══════════════════════════════════════════
 # PARABOLE — IA (6 slides) + carrousel bonus
 # ══════════════════════════════════════════
+def incruste_slide(chemin: str, texte: str, size: int = 64) -> None:
+    """Texte court centré en BAS de la slide, bandeau sombre translucide (style mind_vision)."""
+    img = Image.open(chemin).convert("RGBA")
+    w, h = img.size
+    font = get_font(size, bold=True)
+    lines = wrap_text_pillow(M.clean_text(texte), font, w - 2 * MARGIN)
+    ascent, descent = font.getmetrics()
+    stride = ascent + descent + 8
+    block_h = stride * len(lines)
+    pad = 50
+    top_band = h - block_h - 2 * pad - 40
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    od = ImageDraw.Draw(overlay)
+    # dégradé sombre vers le bas pour lisibilité
+    for yy in range(top_band, h):
+        alpha = int(200 * (yy - top_band) / (h - top_band))
+        od.line([(0, yy), (w, yy)], fill=(20, 12, 8, min(alpha, 210)))
+    img = Image.alpha_composite(img, overlay)
+    draw = ImageDraw.Draw(img)
+    y = h - block_h - pad - 40
+    for ln in lines:
+        lw = draw.textlength(ln, font=font)
+        # ombre portée
+        draw.text(((w - lw) / 2 + 2, y + 2), ln, font=font, fill=(0, 0, 0, 180))
+        draw.text(((w - lw) / 2, y), ln, font=font, fill=(255, 244, 224))
+        y += stride
+    img.convert("RGB").save(chemin)
+
 def generer_textes_parabole(sujet: str) -> dict:
     prompt = (
-        "Tu es un auteur d'albums jeunesse pour adultes. "
-        f"{TON_EDITORIAL}\nSujet : {sujet}\n\n"
-        "CONSIGNE ABSOLUE : réponds EXCLUSIVEMENT avec un objet JSON valide, sans aucun texte avant ni après, "
-        "sans markdown, sans backticks. Le JSON doit contenir exactement ces 3 clés :\n"
-        '{"titre": "un titre poétique de 3 à 6 mots lié au sujet", '
-        '"morale": "une morale originale de 6 à 12 mots inspirée du sujet", '
-        '"question": "une question bienveillante et unique de 6 à 12 mots pour le lecteur"}\n'
-        "La morale et la question doivent être INÉDITES et spécifiques au sujet, jamais génériques."
+        "Tu écris un carrousel Instagram motivationnel en français, style narration visuelle.\n"
+        f"Sujet de la parabole : {sujet}\n\n"
+        "CONSIGNE ABSOLUE : réponds EXCLUSIVEMENT avec un objet JSON valide, sans texte avant/après, "
+        "sans markdown. Le JSON doit contenir exactement ces 7 clés (textes COURTS, percutants, 2-7 mots chacun) :\n"
+        '{"s1_accroche": "phrase d\'accroche choc entre guillemets", '
+        '"s2": "texte scène 2, 3-6 mots", '
+        '"s3": "texte scène 3, 3-6 mots", '
+        '"s4_declic": "le déclic, 3-6 mots", '
+        '"s5": "texte scène 5, 3-6 mots", '
+        '"s6_morale": "la morale puissante, 5-10 mots", '
+        '"caption": "légende complète 2 phrases + question au lecteur"}\n'
+        "Chaque texte doit être INÉDIT, spécifique au sujet, émotionnel. Jamais générique."
     )
     print("  📝 Génération titres/morale/question...")
     brut = texte_vis_garantie(prompt, "[parabole]").strip()
@@ -278,9 +310,15 @@ def generer_textes_parabole(sujet: str) -> dict:
             pass
     print("  ⚠️ JSON invalide → valeurs dérivées du sujet")
     base = sujet.split("(")[0].strip()
-    return {"titre": base[:40],
-            "morale": f"Autour de {base.lower()}, chaque petit pas compte vraiment.",
-            "question": f"Que t'évoque {base.lower()} dans ta vie aujourd'hui ?"}
+    return {
+        "s1_accroche": f"\"{base}.\"",
+        "s2": "Tout commence petit.",
+        "s3": "Personne n'y croit.",
+        "s4_declic": "Et pourtant...",
+        "s5": "Le temps fait son œuvre.",
+        "s6_morale": f"{base} : la patience gagne toujours.",
+        "caption": f"{base}. Et toi, que laisses-tu grandir doucement ? #Motivation",
+    }
 
 def generer_slides(sujet: str, textes: dict) -> list:
     chemins = []
@@ -294,8 +332,10 @@ def generer_slides(sujet: str, textes: dict) -> list:
                   "Square format, same character design across all scenes.")
         image_vis_garantie(prompt, chemin, size=(SLIDE, SLIDE))
         img = ajouter_grain(Image.open(chemin)); img.save(chemin)
-        if i == 1: incruste_haut(chemin, textes.get("titre", ""))
-        if i == 6: incruste_haut(chemin, f"{textes.get('morale','')}  •  {textes.get('question','')}", size=44)
+        cle = ["s1_accroche", "s2", "s3", "s4_declic", "s5", "s6_morale"][i - 1]
+        txt_slide = textes.get(cle, "")
+        if txt_slide:
+            incruste_slide(chemin, txt_slide, size=70 if i in (1, 6) else 60)
         chemins.append(chemin)
     return chemins
 
@@ -304,8 +344,8 @@ def publier_parabole() -> dict:
     print(f"📌 Sujet : {sujet}")
     textes = generer_textes_parabole(sujet)
     chemins = generer_slides(sujet, textes)
-    legende = (f"{textes.get('morale','')}\n\n{textes.get('question','')}\n\n"
-               "#DeveloppementPersonnel #LeconDeVie #HistoireIllustrée")
+    cap = textes.get("caption", textes.get("s6_morale", ""))
+    legende = f"{cap}\n\n#DeveloppementPersonnel #LeconDeVie #HistoireIllustrée #Motivation"
     print(f"📌 Légende :\n{legende}")
     # 1) Post photo slide 1 GARANTI
     res_photo = _publier_photo(chemins[0], legende)
