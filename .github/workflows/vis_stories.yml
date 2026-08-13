@@ -38,6 +38,5 @@ jobs:
       - name: Polices
         run: |
           [ -f assets/fonts/Inter-Bold.ttf ] || python download_fonts.py
-          python download_fonts_vis.py
       - name: Publication VIS
         run: python post_vis.py

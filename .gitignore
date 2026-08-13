@@ -3,6 +3,9 @@ __pycache__/
 *.pyo
 .env
 
+# Archives de téléchargement de polices (ré-téléchargées à la volée)
+assets/fonts/*.zip
+
 # Artéfacts de génération vis (fichiers temporaires)
 vis_slide_*.png
 vis_texte.png
@@ -12,6 +15,5 @@ vis_texte.png
 !published_history.json
 cf_test.py
 fix_cf.py
-fix_prompt.py
 fix_prompt.py
 vis_*.png
