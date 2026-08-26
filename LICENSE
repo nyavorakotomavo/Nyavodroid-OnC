@@ -1,171 +1,140 @@
-LICENCE D'UTILISATION ONC - NYAVO RAKOTOMAVO
-===========================================
+ONC COMMERCIAL SOFTWARE LICENSE
+================================
 
-Version : 1.0
-Date : 26 août 2026
-Auteur : Nyavo Rakotomavo (nyavosapp@gmail.com)
+Version: 2.0
+Date: 26 August 2026
+Copyright (c) 2026 Nyavo Rakotomavo
+All rights reserved.
 
----
+1. OWNERSHIP
+------------
 
-## 1. DÉFINITIONS
+OnC (One Click Content), including its source code, scripts,
+documentation, configuration templates and original materials,
+remains the exclusive intellectual property of Nyavo Rakotomavo.
 
-- **"Logiciel"** : Le code source, les scripts, la documentation et tout autre matériel 
-  fourni dans le dépôt OnC (https://github.com/nyavorakotomavo/OnC).
+This license does not transfer ownership of the Software to the
+Licensee.
 
-- **"Utilisateur"** : Toute personne physique ou morale utilisant le Logiciel.
+2. LICENSE GRANT
+----------------
 
-- **"Utilisation Commerciale"** : Toute utilisation du Logiciel dans le cadre d'une activité 
-  professionnelle, lucrative, ou générant directement ou indirectement des revenus, 
-  y compris mais sans s'y limiter : monétisation, publicité, services payants, 
-  abonnements, ou toute autre forme de rémunération.
+The copyright holder grants each purchaser a personal,
+non-exclusive, non-transferable commercial license to use the
+Software.
 
-- **"Contenu Généré par IA"** : Tout texte, image, vidéo, audio ou autre média produit 
-  par le Logiciel utilisant des modèles d'intelligence artificielle (Mistral, 
-  Together, Gemini, Cloudflare, etc.).
+The Licensee may:
 
----
+- Use the Software for personal or commercial purposes.
+- Run the Software on their own computers or servers.
+- Modify the Software for their own use.
+- Generate and publish content using the Software.
+- Create internal tools or workflows based on the Software.
 
-## 2. DROITS ACCORDÉS
+3. PROHIBITED ACTIVITIES
+------------------------
 
-L'Auteur accorde à l'Utilisateur une licence **personnelle, non exclusive, 
-non transférable, révocable et limitée** pour :
+The Licensee MAY NOT:
 
-- Utiliser le Logiciel **uniquement à titre personnel et non commercial**.
-- Exécuter le Logiciel sur ses propres machines ou serveurs **pour un usage strictement personnel**.
-- Effectuer des copies de sauvegarde du Logiciel pour son usage personnel.
+- Resell the Software or its source code.
+- Redistribute the Software or its source code.
+- Publish the source code publicly.
+- Upload the source code to a public repository.
+- Share the source code with third parties.
+- Sublicense the Software.
+- Sell, license or distribute modified versions of the Software.
+- Include the Software or its source code in a product that is
+  distributed to third parties.
+- Offer the source code as a downloadable product or service.
+- Remove or modify copyright and license notices.
 
----
+The Licensee may make private backup copies for their own use,
+provided that such copies are not distributed to third parties.
 
-## 3. RESTRICTIONS STRICTES
+4. COMMERCIAL USE
+-----------------
 
-L'Utilisateur **N'EST PAS AUTORISÉ** à :
+Commercial use of the Software is permitted.
 
-❌ **Utilisation Commerciale** :
-   - Utiliser le Logiciel dans le cadre d'une activité professionnelle ou lucrative.
-   - Utiliser le Logiciel pour générer du contenu destiné à une utilisation commerciale.
-   - Monétiser directement ou indirectement l'utilisation du Logiciel.
+The Licensee may use OnC to:
 
-❌ **Distribution et Revente** :
-   - Distribuer, vendre, sous-licencier, donner, ou transmettre le Logiciel (ou une partie 
-     de celui-ci) à des tiers, sous quelque forme que ce soit.
-   - Mettre le Logiciel à disposition du public via un service hébergé (SaaS, cloud, etc.).
-   - Intégrer le Logiciel dans un autre produit ou service destiné à la revente.
+- Generate content.
+- Generate revenue.
+- Run social media accounts.
+- Run a business.
+- Provide content creation services.
+- Automate internal business operations.
 
-❌ **Modification et Redistribution** :
-   - Modifier le Logiciel et distribuer les versions modifiées.
-   - Créer des œuvres dérivées du Logiciel et les distribuer.
+However, the Licensee may not sell or redistribute OnC itself,
+its source code, or a modified version of OnC.
 
-❌ **Ingénierie Inverse** :
-   - Effectuer du reverse engineering, de la désassemblage ou de la décompilation du Logiciel.
-   - Contourner les mécanismes de protection éventuels.
+5. THIRD-PARTY SERVICES
+-----------------------
 
-❌ **Suppression de la Licence** :
-   - Supprimer, modifier ou obscurcir cette notice de licence ou les mentions de copyright.
+OnC may interact with third-party services, APIs, libraries,
+models and platforms.
 
----
+The Licensee is responsible for:
 
-## 4. PROPRIÉTÉ INTELLECTUELLE
+- Obtaining their own API keys and credentials.
+- Respecting the terms of third-party services.
+- Paying any applicable third-party fees.
+- Respecting copyright and intellectual property rights.
+- Respecting applicable laws and platform policies.
 
-- Le Logiciel et tout droit de propriété intellectuelle y afférent (y compris mais sans 
-  s'y limiter : droits d'auteur, brevets, marques commerciales) restent la **propriété 
-  exclusive de Nyavo Rakotomavo**.
-- Aucune disposition de cette licence ne doit être interprétée comme une cession de 
-  droits de propriété intellectuelle.
-- L'Utilisateur ne peut revendiquer aucun droit sur le Logiciel ou ses modifications.
+This license does not grant rights to third-party services.
 
----
+6. AI-GENERATED CONTENT
+-----------------------
 
-## 5. NON-RESPONSABILITÉ POUR LE CONTENU GÉNÉRÉ PAR IA
+OnC may use artificial intelligence services to generate text,
+images, audio or video.
 
-**CLAUSE EXPLICITE DE NON-RESPONSABILITÉ :**
+AI-generated content may contain errors, inaccuracies or
+copyright-protected material.
 
-L'Auteur **décline toute responsabilité** concernant le **Contenu Généré par IA**, y compris mais 
-sans s'y limiter :
+The Licensee is responsible for reviewing and using generated
+content appropriately.
 
-- **Précision et exactitude** : Le Contenu Généré par IA peut contenir des erreurs, des 
-  inexactitudes, des informations obsolètes ou des affirmations fausses. L'Utilisateur 
-  assume l'entière responsabilité de vérifier l'exactitude et la fiabilité du Contenu 
-  Généré par IA avant toute utilisation.
+7. NO WARRANTY
+--------------
 
-- **Contenu illégal ou inapproprié** : Le Contenu Généré par IA peut, dans de rares cas, 
-  produire du contenu illégal, diffamatoire, offensant, discriminatoire ou violant les 
-  droits de tiers. L'Utilisateur est **seul responsable** de s'assurer que le Contenu 
-  Généré par IA respecte toutes les lois applicables et les normes éthiques.
+The Software is provided "AS IS", without warranties of any kind,
+express or implied.
 
-- **Droits de tiers** : Le Contenu Généré par IA peut inclure du matériel protégé par 
-  des droits d'auteur, des marques commerciales ou d'autres droits de propriété 
-  intellectuelle appartenant à des tiers. L'Utilisateur est **seul responsable** d'obtenir 
-  les autorisations nécessaires avant toute utilisation commerciale ou publique 
-  du Contenu Généré par IA.
+The copyright holder does not guarantee that the Software will be
+error-free, uninterrupted or compatible with every environment.
 
-- **Utilisation à haut risque** : Le Contenu Généré par IA ne doit **JAMAIS** être utilisé 
-  pour des décisions critiques (médicales, juridiques, financières, de sécurité) sans 
-  vérification humaine approfondie. L'Auteur décline toute responsabilité en cas 
-  de dommages résultant d'une telle utilisation.
+8. LIMITATION OF LIABILITY
+--------------------------
 
-- **Violation des termes des fournisseurs IA** : L'Utilisateur est responsable de 
-  respecter les conditions d'utilisation des fournisseurs IA (Mistral, Together, 
-  Cloudflare, etc.). L'Auteur ne peut être tenu responsable des violations commises 
-  par l'Utilisateur.
+To the maximum extent permitted by applicable law, the copyright
+holder shall not be liable for indirect, incidental, special or
+consequential damages resulting from the use or inability to use
+the Software.
 
-**EN AUCUN CAS L'AUTEUR NE SERA TENU RESPONSABLE** des dommages directs, indirects, 
-accessoires, spéciaux ou consécutifs (y compris, sans limitation, les dommages pour perte 
-de profits, perte de données, interruption d'activité) découlant de l'utilisation 
-du Contenu Généré par IA, **même si l'Auteur a été averti de la possibilité de tels 
-dommages**.
+9. TERMINATION
+--------------
 
----
+This license terminates automatically if the Licensee violates
+the restrictions of this license.
 
-## 6. RESPONSABILITÉ GÉNÉRALE
+Upon termination, the Licensee must stop using the Software and
+destroy all copies in their possession.
 
-- Le Logiciel est fourni **"EN L'ÉTAT"**, sans garantie d'aucune sorte, expresse ou implicite, 
-  y compris, sans limitation, les garanties de **qualité marchande**, d'**adéquation à un 
-  usage particulier** ou de **non-violation**.
-- L'Auteur **ne garantit pas** que le Logiciel sera exempt d'erreurs, de bugs ou de 
-  défauts, ni que son fonctionnement sera ininterrompu ou sécurisé.
-- L'Auteur **ne peut être tenu responsable** des dommages de quelque nature que ce soit 
-  (y compris, sans limitation, les dommages directs, indirects, accessoires ou 
-  consécutifs) découlant de l'utilisation ou de l'impossibilité d'utiliser le Logiciel.
+10. GOVERNING LAW
+-----------------
 
----
+This license is governed by the laws of Madagascar.
 
-## 7. RÉSILIATION
+Any dispute relating to this license shall be subject to the
+competent courts of Antananarivo, Madagascar.
 
-- Toute violation des termes de cette licence **entraîne la résiliation immédiate et 
-  automatique** de tous les droits accordés.
-- En cas de résiliation, l'Utilisateur doit **cesser immédiatement toute utilisation** 
-  du Logiciel et **détruire toutes les copies** en sa possession.
-- L'Auteur se réserve le droit de **poursuivre en justice** pour obtenir réparation 
-  des violations de cette licence.
+11. CONTACT
+-----------
 
----
+Nyavo Rakotomavo
+Email: nyavosapp@gmail.com
+GitHub: https://github.com/nyavorakotomavo
 
-## 8. LOI APPLICABLE ET RÈGLEMENT DES DIFFÉRENDS
-
-- Cette licence est régie et interprétée conformément aux **lois de Madagascar**.
-- Tout litige découlant de ou en relation avec cette licence sera soumis à la 
-  **compétence exclusive des tribunaux d'Antananarivo, Madagascar**.
-
----
-
-## 9. DISPOSITIONS DIVERSES
-
-- Si une disposition de cette licence est jugée inapplicable ou invalide par un tribunal 
-  compétent, les autres dispositions resteront en vigueur.
-- Le fait que l'Auteur ne fasse pas valoir un droit en vertu de cette licence ne constitue 
-  pas une renonciation à ce droit.
-- Cette licence constitue l'**intégralité de l'accord** entre l'Auteur et l'Utilisateur 
-  concernant le Logiciel et remplace tous les accords ou déclarations précédents.
-
----
-
-## 10. CONTACT
-
-Pour toute question concernant cette licence, contactez :
-- **Nom** : Nyavo Rakotomavo
-- **Email** : nyavosapp@gmail.com
-- **GitHub** : https://github.com/nyavorakotomavo
-
----
-
-**© 2026 Nyavo Rakotomavo. Tous droits réservés.**
+© 2026 Nyavo Rakotomavo. All rights reserved.
