@@ -1,21 +1,171 @@
-MIT License
+LICENCE D'UTILISATION ONC - NYAVO RAKOTOM AVO
+===========================================
 
-Copyright (c) 2026 Nyavo Rakotomavo
+Version : 1.0
+Date : 26 août 2026
+Auteur : Nyavo Rakotomavo (nyavosapp@gmail.com)
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+---
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+## 1. DÉFINITIONS
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+- **"Logiciel"** : Le code source, les scripts, la documentation et tout autre matériel 
+  fourni dans le dépôt OnC (https://github.com/nyavorakotomavo/OnC).
+
+- **"Utilisateur"** : Toute personne physique ou morale utilisant le Logiciel.
+
+- **"Utilisation Commerciale"** : Toute utilisation du Logiciel dans le cadre d'une activité 
+  professionnelle, lucrative, ou générant directement ou indirectement des revenus, 
+  y compris mais sans s'y limiter : monétisation, publicité, services payants, 
+  abonnements, ou toute autre forme de rémunération.
+
+- **"Contenu Généré par IA"** : Tout texte, image, vidéo, audio ou autre média produit 
+  par le Logiciel utilisant des modèles d'intelligence artificielle (Mistral, 
+  Together, Gemini, Cloudflare, etc.).
+
+---
+
+## 2. DROITS ACCORDÉS
+
+L'Auteur accorde à l'Utilisateur une licence **personnelle, non exclusive, 
+non transférable, révocable et limitée** pour :
+
+- Utiliser le Logiciel **uniquement à titre personnel et non commercial**.
+- Exécuter le Logiciel sur ses propres machines ou serveurs **pour un usage strictement personnel**.
+- Effectuer des copies de sauvegarde du Logiciel pour son usage personnel.
+
+---
+
+## 3. RESTRICTIONS STRICTES
+
+L'Utilisateur **N'EST PAS AUTORISÉ** à :
+
+❌ **Utilisation Commerciale** :
+   - Utiliser le Logiciel dans le cadre d'une activité professionnelle ou lucrative.
+   - Utiliser le Logiciel pour générer du contenu destiné à une utilisation commerciale.
+   - Monétiser directement ou indirectement l'utilisation du Logiciel.
+
+❌ **Distribution et Revente** :
+   - Distribuer, vendre, sous-licencier, donner, ou transmettre le Logiciel (ou une partie 
+     de celui-ci) à des tiers, sous quelque forme que ce soit.
+   - Mettre le Logiciel à disposition du public via un service hébergé (SaaS, cloud, etc.).
+   - Intégrer le Logiciel dans un autre produit ou service destiné à la revente.
+
+❌ **Modification et Redistribution** :
+   - Modifier le Logiciel et distribuer les versions modifiées.
+   - Créer des œuvres dérivées du Logiciel et les distribuer.
+
+❌ **Ingénierie Inverse** :
+   - Effectuer du reverse engineering, de la désassemblage ou de la décompilation du Logiciel.
+   - Contourner les mécanismes de protection éventuels.
+
+❌ **Suppression de la Licence** :
+   - Supprimer, modifier ou obscurcir cette notice de licence ou les mentions de copyright.
+
+---
+
+## 4. PROPRIÉTÉ INTELLECTUELLE
+
+- Le Logiciel et tout droit de propriété intellectuelle y afférent (y compris mais sans 
+  s'y limiter : droits d'auteur, brevets, marques commerciales) restent la **propriété 
+  exclusive de Nyavo Rakotomavo**.
+- Aucune disposition de cette licence ne doit être interprétée comme une cession de 
+  droits de propriété intellectuelle.
+- L'Utilisateur ne peut revendiquer aucun droit sur le Logiciel ou ses modifications.
+
+---
+
+## 5. NON-RESPONSABILITÉ POUR LE CONTENU GÉNÉRÉ PAR IA
+
+**CLAUSE EXPLICITE DE NON-RESPONSABILITÉ :**
+
+L'Auteur **décline toute responsabilité** concernant le **Contenu Généré par IA**, y compris mais 
+sans s'y limiter :
+
+- **Précision et exactitude** : Le Contenu Généré par IA peut contenir des erreurs, des 
+  inexactitudes, des informations obsolètes ou des affirmations fausses. L'Utilisateur 
+  assume l'entière responsabilité de vérifier l'exactitude et la fiabilité du Contenu 
+  Généré par IA avant toute utilisation.
+
+- **Contenu illégal ou inapproprié** : Le Contenu Généré par IA peut, dans de rares cas, 
+  produire du contenu illégal, diffamatoire, offensant, discriminatoire ou violant les 
+  droits de tiers. L'Utilisateur est **seul responsable** de s'assurer que le Contenu 
+  Généré par IA respecte toutes les lois applicables et les normes éthiques.
+
+- **Droits de tiers** : Le Contenu Généré par IA peut inclure du matériel protégé par 
+  des droits d'auteur, des marques commerciales ou d'autres droits de propriété 
+  intellectuelle appartenant à des tiers. L'Utilisateur est **seul responsable** d'obtenir 
+  les autorisations nécessaires avant toute utilisation commerciale ou publique 
+  du Contenu Généré par IA.
+
+- **Utilisation à haut risque** : Le Contenu Généré par IA ne doit **JAMAIS** être utilisé 
+  pour des décisions critiques (médicales, juridiques, financières, de sécurité) sans 
+  vérification humaine approfondie. L'Auteur décline toute responsabilité en cas 
+  de dommages résultant d'une telle utilisation.
+
+- **Violation des termes des fournisseurs IA** : L'Utilisateur est responsable de 
+  respecter les conditions d'utilisation des fournisseurs IA (Mistral, Together, 
+  Cloudflare, etc.). L'Auteur ne peut être tenu responsable des violations commises 
+  par l'Utilisateur.
+
+**EN AUCUN CAS L'AUTEUR NE SERA TENU RESPONSABLE** des dommages directs, indirects, 
+accessoires, spéciaux ou consécutifs (y compris, sans limitation, les dommages pour perte 
+de profits, perte de données, interruption d'activité) découlant de l'utilisation 
+du Contenu Généré par IA, **même si l'Auteur a été averti de la possibilité de tels 
+dommages**.
+
+---
+
+## 6. RESPONSABILITÉ GÉNÉRALE
+
+- Le Logiciel est fourni **"EN L'ÉTAT"**, sans garantie d'aucune sorte, expresse ou implicite, 
+  y compris, sans limitation, les garanties de **qualité marchande**, d'**adéquation à un 
+  usage particulier** ou de **non-violation**.
+- L'Auteur **ne garantit pas** que le Logiciel sera exempt d'erreurs, de bugs ou de 
+  défauts, ni que son fonctionnement sera ininterrompu ou sécurisé.
+- L'Auteur **ne peut être tenu responsable** des dommages de quelque nature que ce soit 
+  (y compris, sans limitation, les dommages directs, indirects, accessoires ou 
+  consécutifs) découlant de l'utilisation ou de l'impossibilité d'utiliser le Logiciel.
+
+---
+
+## 7. RÉSILIATION
+
+- Toute violation des termes de cette licence **entraîne la résiliation immédiate et 
+  automatique** de tous les droits accordés.
+- En cas de résiliation, l'Utilisateur doit **cesser immédiatement toute utilisation** 
+  du Logiciel et **détruire toutes les copies** en sa possession.
+- L'Auteur se réserve le droit de **poursuivre en justice** pour obtenir réparation 
+  des violations de cette licence.
+
+---
+
+## 8. LOI APPLICABLE ET RÈGLEMENT DES DIFFÉRENDS
+
+- Cette licence est régie et interprétée conformément aux **lois de Madagascar**.
+- Tout litige découlant de ou en relation avec cette licence sera soumis à la 
+  **compétence exclusive des tribunaux d'Antananarivo, Madagascar**.
+
+---
+
+## 9. DISPOSITIONS DIVERSES
+
+- Si une disposition de cette licence est jugée inapplicable ou invalide par un tribunal 
+  compétent, les autres dispositions resteront en vigueur.
+- Le fait que l'Auteur ne fasse pas valoir un droit en vertu de cette licence ne constitue 
+  pas une renonciation à ce droit.
+- Cette licence constitue l'**intégralité de l'accord** entre l'Auteur et l'Utilisateur 
+  concernant le Logiciel et remplace tous les accords ou déclarations précédents.
+
+---
+
+## 10. CONTACT
+
+Pour toute question concernant cette licence, contactez :
+- **Nom** : Nyavo Rakotomavo
+- **Email** : nyavosapp@gmail.com
+- **GitHub** : https://github.com/nyavorakotomavo
+
+---
+
+**© 2026 Nyavo Rakotomavo. Tous droits réservés.**
