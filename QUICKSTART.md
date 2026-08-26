@@ -1,423 +1,703 @@
 # OnC — Quick Start
 
-> Complete setup guide for a fresh OnC installation.
+> **Complete setup guide for buyers**
+>
+> OnC is designed to run automatically through **GitHub Actions**.  
+> Once the initial configuration is complete, your personal computer or phone does **not** need to remain powered on or connected to the Internet for scheduled workflows to run.
+>
+> **This guide is written for non-developers. You do not need to know Python to perform the standard installation.**
 
 ---
 
-# 📖 Table of Contents
+# 📌 Table of Contents
 
-1. [Before You Start](#1-before-you-start)
-2. [Clone the Repository](#2-clone-the-repository)
-3. [Python Environment](#3-python-environment)
-4. [Install Dependencies](#4-install-dependencies)
-5. [Install FFmpeg](#5-install-ffmpeg)
-6. [Install ImageMagick](#6-install-imagemagick)
-7. [Configure Environment Variables](#7-configure-environment-variables)
-8. [Configure API Keys](#8-configure-api-keys)
-9. [Configure Social Media IDs](#9-configure-social-media-ids)
-10. [Configure Search and Verification APIs](#10-configure-search-and-verification-apis)
-11. [Configure Image Generation APIs](#11-configure-image-generation-apis)
-12. [Configure AI Text Providers](#12-configure-ai-text-providers)
-13. [Configure Themes](#13-configure-themes)
-14. [Configure Images and Assets](#14-configure-images-and-assets)
-15. [Configure GitHub Actions](#15-configure-github-actions)
-16. [Configure GitHub Secrets](#16-configure-github-secrets)
-17. [Run a Local Test](#17-run-a-local-test)
-18. [Run a Dry Run](#18-run-a-dry-run)
-19. [Test Content Generation](#19-test-content-generation)
-20. [Test Image Generation](#20-test-image-generation)
-21. [Test Video Pipeline](#21-test-video-pipeline)
-22. [Test Publishing](#22-test-publishing)
-23. [Enable Automatic Workflows](#23-enable-automatic-workflows)
-24. [Troubleshooting](#24-troubleshooting)
-25. [Pre-Production Checklist](#25-pre-production-checklist)
-
----
-
-# 1. Before You Start
-
-Before installing OnC, make sure you have:
-
-- Python 3.11 or newer
-- Git
-- FFmpeg
-- FFprobe
-- ImageMagick
-- An internet connection
-- A GitHub account if GitHub Actions will be used
-- The required API accounts
-- The required API keys/tokens
-- The required social-media account/page
-- The required social-media IDs
-- The OnC repository URL
-
-You do **not** receive the seller's API keys or social-media accounts.
-
-Every buyer must configure their own external services.
+1. [How OnC Works](#1-how-onc-works)
+2. [What You Need Before Starting](#2-what-you-need-before-starting)
+3. [Important Security Rules](#3-important-security-rules)
+4. [Create or Prepare Your GitHub Account](#4-create-or-prepare-your-github-account)
+5. [Create Your OnC Repository](#5-create-your-onc-repository)
+6. [Upload the OnC Files](#6-upload-the-onc-files)
+7. [Check the Repository Structure](#7-check-the-repository-structure)
+8. [Configure GitHub Actions](#8-configure-github-actions)
+9. [Configure GitHub Secrets](#9-configure-github-secrets)
+10. [Configure Social Media IDs](#10-configure-social-media-ids)
+11. [Configure AI Providers](#11-configure-ai-providers)
+12. [Configure Search and Fact-Checking APIs](#12-configure-search-and-fact-checking-apis)
+13. [Configure Image Generation Providers](#13-configure-image-generation-providers)
+14. [Configure Other API Services](#14-configure-other-api-services)
+15. [Configure YAML Themes](#15-configure-yaml-themes)
+16. [Configure Images and Assets](#16-configure-images-and-assets)
+17. [Configure Content Settings](#17-configure-content-settings)
+18. [Verify Workflow Configuration](#18-verify-workflow-configuration)
+19. [First Manual Test](#19-first-manual-test)
+20. [Read the Workflow Logs](#20-read-the-workflow-logs)
+21. [Test Real Publishing](#21-test-real-publishing)
+22. [Enable Automatic Publishing](#22-enable-automatic-publishing)
+23. [What Happens When Your Device Is Off](#23-what-happens-when-your-device-is-off)
+24. [Local Testing for Developers](#24-local-testing-for-developers)
+25. [Troubleshooting](#25-troubleshooting)
+26. [Final Production Checklist](#26-final-production-checklist)
 
 ---
 
-# 2. Clone the Repository
+# 1. How OnC Works
 
-Clone your licensed copy of OnC:
+## ☁️ OnC runs through GitHub Actions
 
-```bash
-git clone <YOUR_ONC_REPOSITORY_URL>
-cd Nyavodroid-OnC
-```
+The standard OnC installation is designed around GitHub Actions.
 
-If your repository uses another directory name, enter that directory instead.
+Your personal device is primarily used for the **initial setup and configuration**.
 
-Verify that the repository is correct:
-
-```bash
-git status
-```
-
-You should see the OnC Git repository information.
-
----
-
-# 3. Python Environment
-
-Using a virtual environment is strongly recommended.
-
-## Windows
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-```
-
-If `python` is not recognized, try:
-
-```bash
-py -m venv .venv
-.venv\Scripts\activate
-```
-
-## Linux / macOS
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-After activation, verify Python:
-
-```bash
-python --version
-```
-
-Expected:
+After the setup is complete, GitHub can execute the OnC workflows on its own hosted runners.
 
 ```text
-Python 3.11.x
+                 YOUR DEVICE
+              PC / Phone / Tablet
+                     │
+                     │
+              Initial configuration
+                     │
+                     ▼
+              ┌───────────────┐
+              │    GitHub     │
+              │   Repository  │
+              └───────┬───────┘
+                      │
+             GitHub Actions
+                      │
+                      ▼
+              ┌───────────────┐
+              │      OnC      │
+              │    Workflows  │
+              └───────┬───────┘
+                      │
+          ┌───────────┼───────────┐
+          ▼           ▼           ▼
+         AI        Images       Video
+          │           │           │
+          └───────────┼───────────┘
+                      ▼
+                 Fact-checking
+                      │
+                      ▼
+                  Publishing
+                      │
+                      ▼
+                Social Media
 ```
 
-or a newer supported version.
+## Your device does NOT need to stay on
+
+After the configuration is complete:
+
+```text
+PC turned off       → OnC can continue running
+Phone turned off    → OnC can continue running
+VS Code closed      → OnC can continue running
+Browser closed      → OnC can continue running
+Internet disconnected
+from your device    → OnC can continue running
+```
+
+The important condition is that:
+
+- GitHub Actions is available;
+- the workflow is enabled;
+- the repository is correctly configured;
+- the required secrets exist;
+- third-party APIs are available;
+- API quotas have not been exceeded.
 
 ---
 
-# 4. Install Dependencies
+# 2. What You Need Before Starting
 
-Upgrade pip:
+You will need:
 
-```bash
-python -m pip install --upgrade pip
-```
+## Required
 
-Install OnC dependencies:
+- A GitHub account
+- Access to your licensed OnC source code
+- A repository where OnC will be installed
+- An account/page on the social platform you want OnC to publish to
+- The required social-media permissions
+- The required API accounts
+- Your API keys/tokens
+- The required page/account IDs
 
-```bash
-pip install -r requirements.txt
-```
+## Optional
 
-If a development requirements file exists:
+Depending on the features you want to use:
 
-```bash
-pip install -r requirements-dev.txt
-```
+- AI text-generation providers
+- AI image-generation providers
+- Search/fact-checking providers
+- Image providers
+- Video-related services
 
----
-
-# 5. Install FFmpeg
-
-FFmpeg is required for media and video processing.
-
-Verify the installation:
-
-```bash
-ffmpeg -version
-```
-
-Also verify FFprobe:
-
-```bash
-ffprobe -version
-```
-
-Both commands must work from the terminal.
-
-If `ffmpeg` is not recognized, install FFmpeg and add its `bin` directory to your system PATH.
+You do **not** need to keep your computer running after the GitHub Actions installation is complete.
 
 ---
 
-# 6. Install ImageMagick
+# 3. Important Security Rules
 
-ImageMagick is used by workflows that require image processing or conversion.
+## 🔴 NEVER publish your API keys
 
-Verify:
+Never put private credentials inside:
 
-```bash
-magick -version
+```text
+README.md
+QUICKSTART.md
+LICENSE
+Python source files
+YAML themes
+GitHub Issues
+GitHub Discussions
+screenshots
 ```
 
-If your installation uses the older command:
-
-```bash
-convert -version
-```
-
-Make sure ImageMagick is available from the terminal.
+Never send your private API keys to another person.
 
 ---
 
-# 7. Configure Environment Variables
+## Never commit `.env`
 
-OnC uses environment variables for API credentials, IDs and runtime configuration.
+Your local `.env` file is private.
 
-If `.env.example` exists, copy it:
+Do not upload it to GitHub.
 
-```bash
-cp .env.example .env
-```
-
-On Windows, you can also simply duplicate:
+The repository should contain:
 
 ```text
 .env.example
 ```
 
-and rename the copy to:
+but not:
 
 ```text
 .env
 ```
 
-Your final structure should look like:
+---
+
+## GitHub Actions secrets
+
+For automatic execution, private credentials should normally be stored as:
 
 ```text
-Nyavodroid-OnC/
-├── .env
-├── .env.example
-├── requirements.txt
-└── ...
+GitHub Repository
+        ↓
+Settings
+        ↓
+Secrets and variables
+        ↓
+Actions
+        ↓
+Repository secrets
 ```
 
-### IMPORTANT
-
-Never upload your real `.env` file to GitHub.
-
-Your `.env` file contains private credentials.
+This prevents the secret from being written directly into the workflow file.
 
 ---
 
-# 8. Configure API Keys
+# 4. Create or Prepare Your GitHub Account
+
+Go to GitHub and sign in.
+
+If you do not already have an account:
+
+1. Create a GitHub account.
+2. Verify your email address.
+3. Sign in.
+4. Make sure you can create repositories.
+
+You do not need to install Git locally for the standard GitHub web-based setup.
+
+---
+
+# 5. Create Your OnC Repository
+
+You need a GitHub repository containing your licensed OnC installation.
+
+## Option A — You received a complete repository
+
+If the seller provided a repository or repository access:
+
+1. Open the repository.
+2. Follow the seller's instructions for creating your licensed copy.
+3. Make sure you have your own repository.
+4. Do not modify the original seller repository.
+
+---
+
+## Option B — You received an archive
+
+If you received something such as:
+
+```text
+OnC.zip
+```
+
+create a new GitHub repository.
+
+Recommended:
+
+```text
+Repository name:
+Nyavodroid-OnC
+```
+
+or another name of your choice.
+
+You may choose the repository visibility according to your license and security requirements.
+
+### Recommended
+
+Use a **private repository** when the source code is licensed for private use.
+
+---
+
+# 6. Upload the OnC Files
+
+If you received an archive:
+
+1. Extract the archive.
+2. Open your GitHub repository.
+3. Select **Add file**.
+4. Select **Upload files**.
+5. Upload the OnC project files.
+6. Make sure the `.github` directory is included.
+7. Make sure the workflow files are included.
+8. Commit the changes.
+
+Your repository should contain the OnC source code and configuration files.
+
+---
+
+# 7. Check the Repository Structure
+
+Before configuring anything, open the repository and verify that important directories are present.
+
+A typical OnC installation may look similar to:
+
+```text
+Nyavodroid-OnC/
+│
+├── .github/
+│   └── workflows/
+│       ├── auto_content.yml
+│       ├── auto_story.yml
+│       ├── auto_video.yml
+│       ├── vis.yml
+│       ├── vis_stories.yml
+│       └── voyage_madagascar.yml
+│
+├── assets/
+│
+├── themes/
+│
+├── video_pipeline/
+│
+├── .env.example
+├── LICENSE
+├── README.md
+├── QUICKSTART.md
+├── requirements.txt
+└── Python source files
+```
+
+The exact files may differ depending on your purchased version.
+
+### Important
+
+Do not delete files simply because you do not immediately understand their purpose.
+
+A workflow, image, font, YAML file, or Python module may be required by another part of OnC.
+
+---
+
+# 8. Configure GitHub Actions
+
+GitHub Actions is the part of GitHub that executes OnC automatically.
+
+Open your repository:
+
+```text
+GitHub
+   ↓
+Your Repository
+   ↓
+Actions
+```
+
+You should see the workflows included with OnC.
+
+For example:
+
+```text
+Auto Content
+Auto Story
+Auto Video
+VIS
+VIS Stories
+Voyage Madagascar
+```
+
+The exact workflow names depend on your version.
+
+---
+
+## If the Actions tab shows your workflows
+
+Good.
+
+Continue to the next step.
+
+---
+
+## If no workflows appear
+
+Check:
+
+```text
+.github/workflows/
+```
+
+The YAML workflow files must be present there.
+
+For example:
+
+```text
+.github/workflows/auto_content.yml
+```
+
+---
+
+# 9. Configure GitHub Secrets
+
+This is one of the most important steps.
+
+GitHub Actions needs access to the APIs used by OnC.
+
+Instead of putting API keys inside the source code, add them as GitHub Actions secrets.
 
 Open:
 
 ```text
-.env
+Repository
+   ↓
+Settings
+   ↓
+Secrets and variables
+   ↓
+Actions
 ```
 
-You will find variables similar to:
+Select:
 
-```env
-API_KEY=your_api_key_here
+```text
+New repository secret
 ```
 
-Replace placeholder values with your own credentials.
+You will enter:
 
-Never put quotation marks around a value unless the configuration specifically requires them.
-
-Example:
-
-```env
-MISTRAL_API_KEY=xxxxxxxx
-```
-
-Not:
-
-```env
-MISTRAL_API_KEY=your_real_key_here
+```text
+Name
+Secret
 ```
 
 ---
 
-# 9. Configure Social Media IDs
+## Example
 
-Social-media automation generally requires both:
+Suppose OnC requires:
 
-1. An account/page ID
-2. An access token
-
-For example:
-
-```env
-FB_PAGE_ID=YOUR_PAGE_ID
-FB_PAGE_ACCESS_TOKEN=YOUR_PAGE_ACCESS_TOKEN
+```text
+MISTRAL_API_KEY
 ```
 
-These are two different values.
+Enter:
 
-### Page ID
+```text
+Name:
+MISTRAL_API_KEY
+```
 
-The Page ID identifies the social-media page.
+Then put your real Mistral API key in:
+
+```text
+Secret:
+YOUR_REAL_MISTRAL_API_KEY
+```
+
+Click:
+
+```text
+Add secret
+```
+
+---
+
+# 10. Configure Social Media IDs
+
+Social-media publishing normally requires both an **ID** and an **access token**.
+
+These are different things.
+
+## Page ID
+
+The Page ID identifies the destination page.
 
 Example:
 
-```env
-FB_PAGE_ID=123456789012345
+```text
+123456789012345
 ```
 
-### Access Token
+## Access Token
 
-The access token authorizes OnC to perform the operations allowed by that token.
+The access token gives OnC permission to perform the actions allowed by the token.
 
 Example:
 
-```env
-FB_PAGE_ACCESS_TOKEN=EAABxxxxxxxxxxxxxxxx
+```text
+EAABxxxxxxxxxxxxxxxx
+```
+
+Do not copy these example values.
+
+Use the values belonging to your own account.
+
+---
+
+## Example GitHub Secrets
+
+Depending on your OnC version, you may need variables such as:
+
+```text
+FB_PAGE_ID
+FB_PAGE_ACCESS_TOKEN
+VIS_FB_PAGE_ID
+VIS_FB_PAGE_TOKEN
+FACEBOOK_PAGE_ID
+FACEBOOK_PAGE_ACCESS_TOKEN
 ```
 
 ### IMPORTANT
 
-Never publish your access token in:
+The names must match the names used by your actual workflow files.
 
-- GitHub
-- README files
-- screenshots
-- public issues
-- Discord
-- public forums
-- source code
+Do not create random variable names.
 
-If a token becomes public, revoke it immediately and create a new one.
+For example, if your workflow contains:
+
+```yaml
+${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+```
+
+the secret must be named:
+
+```text
+FB_PAGE_ACCESS_TOKEN
+```
+
+not:
+
+```text
+FACEBOOK_TOKEN
+```
 
 ---
 
-# 10. Configure Search and Verification APIs
+# 11. Configure AI Providers
 
-If your installation uses external search or fact-checking services, configure their API keys.
+OnC can use external AI providers for content generation.
+
+The exact providers available depend on your version.
+
+Examples may include:
+
+```text
+Mistral
+Gemini
+Together
+Hugging Face
+```
+
+Possible secret names include:
+
+```text
+MISTRAL_API_KEY
+GEMINI_API_KEY_CONTENT
+GEMINI_API_KEY_STORY
+TOGETHER_API_KEY
+HF_TOKEN
+```
+
+Only configure providers actually used by your workflows.
+
+---
+
+## AI fallback system
+
+If your version uses provider fallback, the system can operate conceptually like:
+
+```text
+Primary provider
+       │
+       ├── Success → continue
+       │
+       └── Failure
+             ↓
+       Backup provider
+             │
+             ├── Success → continue
+             │
+             └── Failure
+                   ↓
+             Next provider
+```
+
+A fallback is only possible when:
+
+- the provider is configured;
+- the API key is valid;
+- the account has available quota;
+- the requested service/model is available.
+
+---
+
+# 12. Configure Search and Fact-Checking APIs
+
+Some OnC workflows use external services for research, search, or verification.
 
 For example:
 
-```env
-TAVILY_API_KEY=YOUR_TAVILY_API_KEY
+```text
+TAVILY_API_KEY
 ```
 
-If image search/retrieval is enabled:
+If your version uses Pexels:
 
-```env
-PEXELS_API_KEY=YOUR_PEXELS_API_KEY
+```text
+PEXELS_API_KEY
 ```
 
-Only configure services actually used by your OnC installation.
-
----
-
-# 11. Configure Image Generation APIs
-
-OnC may support several image-generation providers.
-
-Depending on your configuration, variables can include:
-
-```env
-CLOUDFLARE_ACCOUNT_ID=YOUR_ACCOUNT_ID
-CLOUDFLARE_API_TOKEN=YOUR_API_TOKEN
-```
-
-Other providers may require variables such as:
-
-```env
-FAL_API_KEY=YOUR_FAL_KEY
-REPLICATE_API_TOKEN=YOUR_REPLICATE_TOKEN
-HF_TOKEN=YOUR_HUGGINGFACE_TOKEN
-```
-
-Do not configure a provider simply because its variable exists in an example.
-
-Only activate providers you intend to use.
-
----
-
-# 12. Configure AI Text Providers
-
-Configure the AI providers required by your installation.
+Add the required credentials as GitHub Actions secrets.
 
 Example:
 
-```env
-MISTRAL_API_KEY=YOUR_MISTRAL_KEY
-GEMINI_API_KEY_CONTENT=YOUR_GEMINI_KEY
-TOGETHER_API_KEY=YOUR_TOGETHER_KEY
-HF_TOKEN=YOUR_HUGGINGFACE_TOKEN
+```text
+Name:
+TAVILY_API_KEY
+
+Secret:
+YOUR_REAL_TAVILY_KEY
 ```
 
-OnC may use a fallback chain.
+---
+
+# 13. Configure Image Generation Providers
+
+Depending on your installation, OnC may use one or more image providers.
+
+Possible services include:
+
+```text
+Cloudflare
+Hugging Face
+Together
+Fal.ai
+Replicate
+Pollinations
+```
+
+Possible variables may include:
+
+```text
+CLOUDFLARE_ACCOUNT_ID
+CLOUDFLARE_API_TOKEN
+FAL_API_KEY
+REPLICATE_API_TOKEN
+HF_TOKEN
+```
+
+Only configure services actually required by your workflows.
+
+---
+
+## Cloudflare example
+
+If your workflow expects:
+
+```text
+CLOUDFLARE_ACCOUNT_ID
+CLOUDFLARE_API_TOKEN
+```
+
+create both secrets.
+
+Do not combine them into one secret.
+
+---
+
+# 14. Configure Other API Services
+
+Some versions of OnC may require additional services.
+
+Before creating a secret:
+
+1. Open the relevant workflow.
+2. Look for:
+
+```yaml
+secrets.
+```
+
+3. Write down every required secret.
+4. Create the corresponding GitHub Actions secrets.
 
 For example:
 
-```text
-Provider 1
-    ↓
-Provider 2
-    ↓
-Provider 3
-    ↓
-Provider 4
+```yaml
+${{ secrets.EXAMPLE_API_KEY }}
 ```
 
-This means that if a provider fails or reaches a limit, another configured provider may be used.
+means that GitHub needs a secret named:
 
-### Important
-
-A fallback provider is only available if:
-
-- the API key is configured;
-- the account is active;
-- the selected model is available;
-- the API quota is sufficient.
+```text
+EXAMPLE_API_KEY
+```
 
 ---
 
-# 13. Configure Themes
+# 15. Configure YAML Themes
 
-OnC uses YAML configuration files for themes and content configuration where enabled.
+OnC uses YAML configuration files for themes and content configuration where supported.
 
-Look inside:
+Open:
 
 ```text
 themes/
 ```
 
-Typical structure:
+You may find files such as:
 
 ```text
-themes/
-├── theme_1.yaml
-├── theme_2.yaml
-└── ...
+nyavo.yaml
+vis.yaml
+voyage_madagascar.yaml
 ```
 
-The exact filenames depend on the version of OnC you purchased.
+The exact files depend on your OnC version.
 
 ---
 
-## Creating a Theme
+## What is a YAML theme?
 
-A theme can contain configuration such as:
+A YAML theme contains configuration that controls how content is generated or presented.
+
+For example:
 
 ```yaml
 name: "My Theme"
@@ -429,66 +709,720 @@ colors:
 fonts:
   title: "Inter"
   body: "Inter"
+```
 
+The actual fields supported by OnC depend on the version.
+
+---
+
+## Do not invent configuration fields
+
+If the existing theme contains:
+
+```yaml
+colors:
+fonts:
 style:
-  image_style: "modern"
-
 content:
-  language: "fr"
 ```
 
-Use the structure already expected by the OnC configuration loader.
+do not automatically add:
 
-**Do not invent new YAML fields unless the code supports them.**
+```yaml
+something_random:
+```
 
-Before changing a theme, inspect the existing YAML files and the configuration loader.
+unless the OnC code supports it.
 
 ---
 
-## Theme Checklist
+## Editing a theme
 
-For every theme you want to use:
-
-- [ ] YAML file exists
-- [ ] YAML syntax is valid
-- [ ] Referenced fonts exist
-- [ ] Referenced images exist
-- [ ] Referenced directories exist
-- [ ] Theme name matches the configuration
-- [ ] No personal credentials are inside the YAML file
+1. Open the desired `.yaml` file.
+2. Change only the values you want to customize.
+3. Keep the YAML structure intact.
+4. Save the file.
+5. Commit the change.
 
 ---
 
-## Validate YAML
+## YAML indentation is important
 
-If PyYAML is installed, you can perform a basic syntax test:
+This is valid:
 
-```bash
-python -c "import yaml; print(yaml.safe_load(open('themes/your_theme.yaml', encoding='utf-8')))"
+```yaml
+colors:
+  primary: "#000000"
+  secondary: "#FFFFFF"
 ```
 
-Replace:
+This may break the configuration:
+
+```yaml
+colors:
+primary: "#000000"
+secondary: "#FFFFFF"
+```
+
+Be careful with spaces and indentation.
+
+---
+
+# 16. Configure Images and Assets
+
+OnC may require local assets.
+
+Look inside:
 
 ```text
-themes/your_theme.yaml
+assets/
 ```
 
-with the actual theme filename.
+You may find:
+
+```text
+images
+fonts
+emojis
+sfx
+logos
+```
+
+The exact structure depends on your version.
 
 ---
 
-# 14. Configure Images and Assets
+## Replacing an image
 
-OnC may require local assets such as:
+If the project expects:
 
-- logos
-- background images
-- icons
-- fonts
-- sound effects
-- video assets
-- templates
-- other media
+```text
+assets/images/logo.png
+```
+
+and you want to replace it:
+
+1. Prepare your new image.
+2. Use the expected filename.
+3. Put it in the expected directory.
+4. Commit the change.
+
+Example:
+
+```text
+assets/
+└── images/
+    └── logo.png
+```
+
+---
+
+## Do not randomly rename files
+
+If Python or YAML references:
+
+```text
+assets/images/logo.png
+```
+
+and you rename the file to:
+
+```text
+assets/images/mylogo.png
+```
+
+the workflow may fail.
+
+If you want to change the filename, update every corresponding reference.
+
+---
+
+# 17. Configure Content Settings
+
+Depending on your version, OnC may use environment variables or configuration files to control content generation.
+
+Examples may include:
+
+```text
+BRAND
+FORCE_FORMAT
+STRATEGIE_JSON
+VIS_FORCE_PILIER
+VIS_EXCLUDE
+VIS_DRY_RUN
+```
+
+Only use variables that actually exist in your version.
+
+---
+
+## Example
+
+If your workflow expects:
+
+```text
+BRAND=nyavo
+```
+
+use:
+
+```text
+nyavo
+```
+
+Do not use:
+
+```text
+NyavoBrand
+```
+
+unless the code explicitly supports it.
+
+---
+
+# 18. Verify Workflow Configuration
+
+Before running OnC automatically, open each workflow.
+
+Go to:
+
+```text
+.github/workflows/
+```
+
+Open the YAML files one by one.
+
+Check:
+
+### Secrets
+
+Look for:
+
+```yaml
+secrets.
+```
+
+Example:
+
+```yaml
+${{ secrets.MISTRAL_API_KEY }}
+```
+
+Make sure the corresponding secret exists.
+
+---
+
+### Repository files
+
+Check that scripts referenced by the workflow actually exist.
+
+Example:
+
+```yaml
+python post_content.py
+```
+
+means that:
+
+```text
+post_content.py
+```
+
+must exist in the expected location.
+
+---
+
+### Python version
+
+Check the Python version used by the workflow.
+
+It should be compatible with the version required by OnC.
+
+---
+
+### Schedule
+
+Look for:
+
+```yaml
+schedule:
+```
+
+Example:
+
+```yaml
+schedule:
+  - cron: "00 07 * * *"
+```
+
+The exact schedule depends on your workflow.
+
+Remember:
+
+> GitHub Actions cron schedules use **UTC** unless the workflow specifically handles another timezone.
+
+---
+
+# 19. First Manual Test
+
+Do **not** immediately activate automatic publishing.
+
+First perform a manual test.
+
+Open:
+
+```text
+GitHub
+   ↓
+Repository
+   ↓
+Actions
+```
+
+Select the workflow you want to test.
+
+If the workflow supports manual execution, you will see:
+
+```text
+Run workflow
+```
+
+Click it.
+
+---
+
+## What you should see
+
+GitHub will create a workflow run.
+
+You should see stages similar to:
+
+```text
+Queued
+   ↓
+Set up job
+   ↓
+Checkout
+   ↓
+Set up Python
+   ↓
+Install dependencies
+   ↓
+Load configuration
+   ↓
+Call APIs
+   ↓
+Generate content
+   ↓
+Generate/retrieve media
+   ↓
+Quality control
+   ↓
+Publish
+```
+
+The exact steps depend on the workflow.
+
+---
+
+# 20. Read the Workflow Logs
+
+If the workflow succeeds:
+
+```text
+✓ Success
+```
+
+Good.
+
+If it fails:
+
+```text
+✗ Failure
+```
+
+click the failed job.
+
+Open the failed step.
+
+Read the error message.
+
+---
+
+## Common errors
+
+### `401 Unauthorized`
+
+Usually means:
+
+```text
+Invalid API key
+Invalid token
+Incorrect authentication
+```
+
+---
+
+### `403 Forbidden`
+
+Usually means:
+
+```text
+Missing permission
+Insufficient access
+Platform restriction
+```
+
+---
+
+### `404 Not Found`
+
+Usually means:
+
+```text
+Wrong ID
+Wrong endpoint
+Missing resource
+```
+
+---
+
+### `429 Too Many Requests`
+
+Usually means:
+
+```text
+Rate limit
+API quota exceeded
+Too many requests
+```
+
+---
+
+### `ModuleNotFoundError`
+
+Usually means:
+
+```text
+A Python dependency is missing.
+```
+
+Check:
+
+```text
+requirements.txt
+```
+
+and the workflow installation step.
+
+---
+
+### `FileNotFoundError`
+
+Usually means:
+
+```text
+A required file/image/font/configuration is missing.
+```
+
+Check:
+
+```text
+assets/
+themes/
+```
+
+and the paths used by the code.
+
+---
+
+# 21. Test Real Publishing
+
+Only perform this after the workflow itself successfully runs.
+
+Before the first real publication, verify:
+
+- correct destination page;
+- correct Page ID;
+- correct access token;
+- correct brand;
+- correct theme;
+- correct image;
+- correct content;
+- correct publishing format.
+
+If a dry-run mode exists in your version, use it first.
+
+---
+
+## First real publication
+
+Run one workflow manually.
+
+Wait for:
+
+```text
+✓ Workflow successful
+```
+
+Then check the destination social-media page.
+
+Verify:
+
+- content was published;
+- image/video is correct;
+- text is correct;
+- formatting is correct;
+- no unexpected content was published.
+
+---
+
+# 22. Enable Automatic Publishing
+
+Once manual testing is successful, automatic scheduling can be used.
+
+Go to:
+
+```text
+GitHub
+   ↓
+Actions
+   ↓
+Your workflow
+```
+
+Make sure the workflow is enabled.
+
+The scheduled trigger will then run according to the schedule defined in its YAML file.
+
+---
+
+## Important
+
+GitHub Actions scheduling is not the same thing as a program running permanently.
+
+Instead:
+
+```text
+Scheduled time
+      ↓
+GitHub starts a runner
+      ↓
+OnC executes
+      ↓
+OnC finishes
+      ↓
+Runner stops
+```
+
+This is normal.
+
+OnC does not need to remain running continuously.
+
+---
+
+# 23. What Happens When Your Device Is Off
+
+After successful configuration:
+
+```text
+10:00
+Your PC → OFF
+
+Your phone → OFF
+
+Internet on your device → OFF
+
+        ↓
+
+GitHub
+        ↓
+Scheduled workflow
+        ↓
+GitHub-hosted runner
+        ↓
+OnC
+        ↓
+AI APIs
+        ↓
+Media generation
+        ↓
+Publishing
+```
+
+Your personal device is not required for the workflow execution.
+
+However, the workflow can only run if the external requirements are available.
+
+For example:
+
+```text
+GitHub Actions available       ✓
+Workflow enabled               ✓
+Secrets valid                  ✓
+API quota available            ✓
+Social-media permissions valid ✓
+Third-party services available ✓
+```
+
+---
+
+# 24. Local Testing for Developers
+
+This section is optional.
+
+Normal buyers do **not** need to run OnC locally for scheduled automation.
+
+Local execution is useful for:
+
+- development;
+- debugging;
+- testing;
+- modifying the code;
+- testing themes;
+- investigating errors.
+
+---
+
+## Install Python
+
+```bash
+python --version
+```
+
+Create a virtual environment:
+
+```bash
+python -m venv .venv
+```
+
+Windows:
+
+```bash
+.venv\Scripts\activate
+```
+
+Linux/macOS:
+
+```bash
+source .venv/bin/activate
+```
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## Syntax test
+
+Run:
+
+```bash
+python -m compileall .
+```
+
+If no Python syntax errors are reported, the compilation check passes.
+
+---
+
+## Local configuration
+
+If local execution is supported, create:
+
+```text
+.env
+```
+
+from:
+
+```text
+.env.example
+```
+
+Never commit the real `.env`.
+
+---
+
+# 25. Troubleshooting
+
+## OnC does not appear in GitHub Actions
+
+Check:
+
+```text
+.github/workflows/
+```
+
+Make sure the workflow files are actually committed.
+
+---
+
+## Workflow starts but immediately fails
+
+Check:
+
+1. Python version.
+2. Dependencies.
+3. Missing secrets.
+4. Workflow permissions.
+5. File paths.
+
+---
+
+## API key error
+
+Check the secret name.
+
+For example, if the workflow contains:
+
+```yaml
+${{ secrets.GEMINI_API_KEY_CONTENT }}
+```
+
+the GitHub secret must be exactly:
+
+```text
+GEMINI_API_KEY_CONTENT
+```
+
+Capitalization and spelling matter.
+
+---
+
+## Social-media publishing fails
+
+Check:
+
+```text
+Page ID
+Access Token
+Permissions
+Token expiration
+API availability
+```
+
+Do not assume that a valid token automatically has every permission required by the platform.
+
+---
+
+## Theme causes an error
+
+Check:
+
+```text
+YAML syntax
+Indentation
+Filename
+Referenced assets
+Supported configuration fields
+```
+
+---
+
+## Image is missing
 
 Check:
 
@@ -496,622 +1430,267 @@ Check:
 assets/
 ```
 
-and other asset directories included in your release.
+Then verify that the filename used by the code or YAML exactly matches the actual filename.
 
 ---
 
-## Image Checklist
+## Workflow cannot find a Python file
 
-For every image referenced by the code:
-
-- [ ] File exists
-- [ ] Filename is correct
-- [ ] Extension is correct
-- [ ] File is readable
-- [ ] The path used by the code is correct
-- [ ] The image is not a personal/private asset
-- [ ] The image can legally be used
-
-Common supported formats may include:
+Example:
 
 ```text
-.png
-.jpg
-.jpeg
-.webp
+python post_content.py
 ```
 
-depending on the specific workflow.
-
----
-
-## Missing Image Error
-
-If OnC reports something similar to:
-
-```text
-FileNotFoundError
-```
-
-or:
+but GitHub reports:
 
 ```text
 No such file or directory
 ```
 
-check:
+Check the repository structure.
 
-1. The filename.
-2. The directory.
-3. Uppercase/lowercase differences.
-4. The path inside the configuration.
-5. Whether the asset was included in your purchased release.
+The workflow command must match the actual location of the script.
 
 ---
 
-# 15. Configure GitHub Actions
+## GitHub Actions does not run at the exact scheduled minute
 
-GitHub Actions allows OnC workflows to run automatically.
+Scheduled workflows can sometimes start later than their nominal schedule.
 
-Workflows are stored in:
-
-```text
-.github/workflows/
-```
-
-You may find files such as:
-
-```text
-.github/
-└── workflows/
-    ├── auto_content.yml
-    ├── auto_story.yml
-    ├── auto_video.yml
-    └── ...
-```
-
-The exact workflow files depend on your release.
+Do not design a workflow that assumes execution will begin at the exact second specified by a cron expression.
 
 ---
 
-# 16. Configure GitHub Secrets
+# 26. Final Production Checklist
 
-GitHub Actions should **not** read private credentials from committed files.
+Do not consider the installation complete until these checks pass.
 
-Instead, configure repository secrets.
+## 🟢 Repository
 
-Go to:
-
-```text
-GitHub Repository
-    ↓
-Settings
-    ↓
-Secrets and variables
-    ↓
-Actions
-    ↓
-New repository secret
-```
-
-Create the secrets required by your workflows.
-
-For example:
-
-```text
-MISTRAL_API_KEY
-GEMINI_API_KEY_CONTENT
-TOGETHER_API_KEY
-HF_TOKEN
-TAVILY_API_KEY
-PEXELS_API_KEY
-FB_PAGE_ID
-FB_PAGE_ACCESS_TOKEN
-```
-
-The secret names must match the names used by your workflow files.
+- [ ] OnC source code uploaded
+- [ ] `.github/workflows/` exists
+- [ ] `requirements.txt` exists
+- [ ] `README.md` exists
+- [ ] `QUICKSTART.md` exists
+- [ ] `LICENSE` exists
+- [ ] `.env.example` exists
+- [ ] `.env` is NOT committed
 
 ---
 
-# 17. Run a Local Test
+## 🟢 GitHub Actions
 
-Before enabling automatic publishing, test OnC locally.
-
-First verify that Python can import the required modules.
-
-For example:
-
-```bash
-python -m compileall .
-```
-
-This checks Python files for syntax errors.
-
-A successful run should complete without Python syntax errors.
+- [ ] Actions tab is available
+- [ ] Workflows are visible
+- [ ] Workflows are enabled
+- [ ] Required permissions are configured
+- [ ] Manual workflow can start
+- [ ] Manual workflow completes successfully
 
 ---
 
-# 18. Run a Dry Run
+## 🟢 Secrets
 
-If your workflow supports a dry-run option, enable it before publishing real content.
-
-For example:
-
-```env
-DRY_RUN=1
-```
-
-or the exact variable supported by your workflow.
-
-Check the code/workflow to determine the correct variable name.
-
-A dry run should allow you to verify:
-
-- configuration;
-- API access;
-- content generation;
-- image generation;
-- file creation;
-- formatting;
-- workflow logic;
-
-without publishing real content.
-
----
-
-# 19. Test Content Generation
-
-Run the appropriate content-generation script.
-
-For example:
-
-```bash
-python post_content.py
-```
-
-Verify that:
-
-- the script starts successfully;
-- the AI provider responds;
-- content is generated;
-- no API authentication error occurs;
-- the output is saved correctly;
-- no unexpected personal configuration is used.
-
----
-
-# 20. Test Image Generation
-
-Run the workflow responsible for image generation or run a complete content workflow that uses images.
-
-Verify:
-
-- the API key is accepted;
-- an image is generated or retrieved;
-- the image is saved;
-- the expected file format is produced;
-- the image can be opened;
-- no fallback provider fails unexpectedly.
-
-If the primary provider fails, verify that the configured fallback provider works.
-
----
-
-# 21. Test Video Pipeline
-
-If video generation is enabled, test the pipeline step by step.
-
-```bash
-python video_pipeline/01_script.py
-```
-
-Then:
-
-```bash
-python video_pipeline/02_voice.py
-```
-
-Then:
-
-```bash
-python video_pipeline/03_analyze.py
-```
-
-Then:
-
-```bash
-python video_pipeline/04_visuals.py
-```
-
-Then:
-
-```bash
-python video_pipeline/05_animate.py
-```
-
-Then:
-
-```bash
-python video_pipeline/06_audio.py
-```
-
-Then:
-
-```bash
-python video_pipeline/07_editor.py
-```
-
-Then:
-
-```bash
-python video_pipeline/08_qc.py
-```
-
-Only proceed to publishing after the quality-control step succeeds.
-
----
-
-# 22. Test Publishing
-
-Publishing should be the final test.
-
-Before doing this:
-
-- Verify the destination page/account.
-- Verify the access token.
-- Verify the Page ID.
-- Verify the generated content.
-- Disable dry-run mode only when you are ready.
-- Make sure you are testing on the correct account.
-
-Run the publishing workflow.
-
-After publishing, verify the result directly on the destination platform.
-
----
-
-# 23. Enable Automatic Workflows
-
-Only enable automatic workflows after local testing is successful.
-
-Go to:
-
-```text
-GitHub
-    ↓
-Repository
-    ↓
-Actions
-```
-
-Select the desired workflow.
-
-If the workflow supports manual execution:
-
-```text
-Run workflow
-```
-
-Run it manually first.
-
-Check the execution logs.
-
-Only after a successful manual run should you rely on the scheduled trigger.
-
----
-
-# 24. Troubleshooting
-
-## API authentication error
-
-Example:
-
-```text
-401 Unauthorized
-```
-
-Check:
-
-- API key is correct.
-- API key is active.
-- Variable name is correct.
-- `.env` is loaded.
-- GitHub Secret name matches the workflow.
-- The provider account has access to the requested model/service.
-
----
-
-## Rate limit
-
-Example:
-
-```text
-429 Too Many Requests
-```
-
-Possible causes:
-
-- API quota reached.
-- Too many requests.
-- Free-tier limit.
-- Provider temporarily limiting requests.
-
-If a fallback provider is configured, OnC may switch to another provider.
-
-Otherwise, wait for the provider quota to reset or configure another provider.
-
----
-
-## Missing environment variable
-
-Example:
-
-```text
-KeyError
-```
-
-or:
-
-```text
-API key not found
-```
-
-Check `.env` and compare the variable name with the name used in the Python code.
-
-For GitHub Actions, check:
-
-```text
-Settings
-→ Secrets and variables
-→ Actions
-```
-
----
-
-## Missing file
-
-Example:
-
-```text
-FileNotFoundError
-```
-
-Check:
-
-- filename;
-- directory;
-- file extension;
-- relative path;
-- theme configuration;
-- asset configuration.
-
----
-
-## FFmpeg error
-
-Verify:
-
-```bash
-ffmpeg -version
-ffprobe -version
-```
-
-If either command fails, install FFmpeg correctly and make sure it is available in PATH.
-
----
-
-## ImageMagick error
-
-Verify:
-
-```bash
-magick -version
-```
-
-If this fails, reinstall ImageMagick or correct the PATH configuration.
-
----
-
-## GitHub Actions failure
-
-Open:
-
-```text
-GitHub
-→ Actions
-→ Failed workflow
-→ Failed job
-→ Logs
-```
-
-Read the first meaningful error rather than only looking at the final line.
-
-Common causes:
-
-- missing secret;
-- invalid API key;
-- missing dependency;
-- incorrect path;
-- unavailable third-party service;
-- invalid configuration;
-- workflow permissions.
-
----
-
-# 25. Pre-Production Checklist
-
-Before using OnC continuously, verify every item below.
-
-## Installation
-
-- [ ] Repository cloned
-- [ ] Python installed
-- [ ] Virtual environment created
-- [ ] `requirements.txt` installed
-- [ ] FFmpeg installed
-- [ ] FFprobe installed
-- [ ] ImageMagick installed
-
-## Configuration
-
-- [ ] `.env` created
-- [ ] `.env` is ignored by Git
-- [ ] API keys configured
 - [ ] Social-media IDs configured
-- [ ] Access tokens configured
-- [ ] Search APIs configured
-- [ ] Image APIs configured
-- [ ] AI providers configured
+- [ ] Social-media tokens configured
+- [ ] AI API keys configured
+- [ ] Search API keys configured
+- [ ] Image API keys configured
+- [ ] Other required secrets configured
+- [ ] Secret names exactly match workflow names
+- [ ] No secret is written directly in source code
 
-## Themes
+---
 
-- [ ] Required YAML themes exist
+## 🟢 Themes
+
+- [ ] Required YAML files exist
 - [ ] YAML syntax is valid
-- [ ] Theme references are correct
-- [ ] Required fonts exist
-- [ ] Required images exist
+- [ ] Theme names are correct
+- [ ] Referenced fonts exist
+- [ ] Referenced images exist
+- [ ] No personal credentials are inside YAML files
 
-## Assets
+---
+
+## 🟢 Assets
 
 - [ ] Required images exist
 - [ ] Required fonts exist
 - [ ] Required sound effects exist
 - [ ] Required video assets exist
-- [ ] File paths are correct
-
-## Testing
-
-- [ ] Python compilation test passed
-- [ ] Configuration test passed
-- [ ] AI generation test passed
-- [ ] Image generation test passed
-- [ ] Fact-checking test passed
-- [ ] Video pipeline tested if enabled
-- [ ] Quality control passed
-- [ ] Dry run passed
-- [ ] Publishing test passed
-
-## GitHub Actions
-
-- [ ] Repository secrets configured
-- [ ] Workflow permissions checked
-- [ ] Manual workflow test passed
-- [ ] Scheduled workflow checked
-- [ ] Logs checked
-- [ ] No credentials committed
+- [ ] Paths are correct
+- [ ] No private/personal asset is included accidentally
 
 ---
 
-# 🔐 Final Security Check
+## 🟢 Testing
 
-Before pushing anything to GitHub, run:
+- [ ] Python syntax check passed
+- [ ] Dependencies installed successfully
+- [ ] AI generation tested
+- [ ] Image generation tested
+- [ ] Fact-checking tested if enabled
+- [ ] Video pipeline tested if enabled
+- [ ] Dry run tested if available
+- [ ] Manual workflow tested
+- [ ] Real publication tested
 
-```bash
-git status
-```
+---
 
-Make sure `.env` is not listed.
+## 🟢 Automation
 
-You can also check tracked files:
-
-```bash
-git ls-files
-```
-
-Confirm that private credentials are not included.
-
-Never commit:
-
-```text
-.env
-private API keys
-access tokens
-passwords
-cookies
-private credentials
-```
-
-If you accidentally commit a secret:
-
-1. Revoke the secret immediately.
-2. Generate a replacement.
-3. Remove the secret from the repository.
-4. Check Git history if necessary.
+- [ ] Scheduled workflow is enabled
+- [ ] Cron schedule has been checked
+- [ ] UTC timezone has been understood
+- [ ] GitHub Actions logs show successful runs
+- [ ] The user does not need to keep their computer running
 
 ---
 
 # 🎉 Installation Complete
 
-When all tests pass, OnC is ready for normal operation.
+If every required item above is checked, your OnC installation is ready for automated operation through GitHub Actions.
 
-Recommended workflow:
+The normal operating model is:
 
 ```text
-Install
-   ↓
-Configure APIs
-   ↓
-Configure IDs
-   ↓
-Configure Themes
-   ↓
-Configure Assets
-   ↓
-Configure GitHub Secrets
-   ↓
-Local Test
-   ↓
-Dry Run
-   ↓
-Manual Publishing Test
-   ↓
-GitHub Actions Test
-   ↓
-Enable Automation
+             ONE-TIME SETUP
+                   │
+                   ▼
+          GitHub Repository
+                   │
+                   ▼
+        Configure API Secrets
+                   │
+                   ▼
+        Configure IDs & Themes
+                   │
+                   ▼
+          Test Manually
+                   │
+                   ▼
+        Test Real Publication
+                   │
+                   ▼
+        Enable Scheduled Runs
+                   │
+                   ▼
+             AUTOMATION
+                   │
+                   ▼
+        ┌────────────────────┐
+        │    GitHub Actions  │
+        └─────────┬──────────┘
+                  │
+                  ▼
+                 OnC
+                  │
+        ┌─────────┼─────────┐
+        ▼         ▼         ▼
+       Text     Images    Videos
+        │         │         │
+        └─────────┼─────────┘
+                  ▼
+             Verification
+                  │
+                  ▼
+              Publishing
 ```
 
----
+## Your device can now be turned off.
 
-# 📞 Support
+OnC does not require your personal computer or phone to remain powered on for scheduled GitHub Actions workflows.
 
-If something does not work, collect:
+The automation depends on the availability and limits of:
 
-- Operating system
-- Python version
-- OnC version
-- Command executed
-- Complete error message
-- Relevant workflow log
-- Configuration variable name involved
-
-**Never send API keys, access tokens or passwords when requesting support.**
+- GitHub Actions;
+- your configured APIs;
+- social-media platforms;
+- third-party services;
+- API quotas;
+- account permissions;
+- the OnC workflow configuration.
 
 ---
 
-# ⚠️ Important
+# 🔐 Final Security Reminder
 
-OnC integrates with third-party APIs and platforms.
+Never share:
 
-Third-party services can change:
+```text
+API keys
+Access tokens
+Passwords
+GitHub tokens
+Cookies
+Private credentials
+```
 
-- APIs
-- authentication systems
-- quotas
-- pricing
-- available models
-- permissions
-- terms of service
+If a credential is accidentally exposed:
 
-Therefore, an API or platform may require configuration changes after an external service update.
-
-The buyer is responsible for maintaining their own third-party accounts and credentials.
+1. Revoke it immediately.
+2. Create a replacement.
+3. Update the corresponding GitHub secret.
+4. Check the repository history if necessary.
 
 ---
 
-## OnC
+# 📦 Buyer Responsibility
 
-**One Click Content**
+The buyer is responsible for:
 
-Automate. Generate. Verify. Publish.
+- creating and maintaining their own third-party accounts;
+- obtaining their own API keys;
+- maintaining their own social-media permissions;
+- paying any third-party API costs;
+- respecting the terms of the services they connect to OnC;
+- maintaining their GitHub account;
+- monitoring API quotas and limits.
+
+OnC does not include the seller's private API credentials, social-media accounts, access tokens, or personal configuration.
+
+---
+
+# ⚠️ Third-Party Services
+
+OnC depends on external services.
+
+Those services may change:
+
+- APIs;
+- authentication;
+- permissions;
+- pricing;
+- quotas;
+- models;
+- rate limits;
+- availability;
+- terms of service.
+
+An external service change may therefore require configuration or code updates.
+
+---
+
+# 🏁 OnC Ready
+
+Once the final checklist passes:
+
+```text
+Repository       ✓
+Secrets          ✓
+IDs              ✓
+Themes           ✓
+Assets           ✓
+Workflows        ✓
+Manual test      ✓
+Publishing test  ✓
+Automation       ✓
+```
+
+Your OnC installation is ready to operate automatically through GitHub Actions.
+
+**One Click Content — Automate. Generate. Verify. Publish.**
 
 © 2026 Nyavo Rakotomavo — All Rights Reserved.
