@@ -90,13 +90,15 @@ Together
 Gemini
    ↓
 Hugging Face
+```
 
-Image Generation
+### Image Generation
 
 OnC can also use multiple image providers depending on the configured workflow.
 
 Example:
 
+```text
 Primary Provider
        ↓
 Secondary Provider
@@ -104,15 +106,13 @@ Secondary Provider
 Fallback Provider
        ↓
 Final Fallback
+```
 
 > ⚡ Provider availability depends on the APIs, models, accounts and quotas available to the user.
 
-
-
-
 ---
 
-📡 RSS & Research
+# 📡 RSS & Research
 
 OnC can retrieve information from configured RSS feeds and online sources.
 
@@ -120,32 +120,25 @@ RSS sources can be configured according to the user's own needs.
 
 Examples of possible sources include:
 
-Technology
-
-Science
-
-News
-
-Education
-
-Business
-
-Entertainment
-
-Specialized publications
-
+- Technology
+- Science
+- News
+- Education
+- Business
+- Entertainment
+- Specialized publications
 
 The user is responsible for selecting appropriate sources and respecting their terms of use.
 
-
 ---
 
-🔎 Fact-Checking
+# 🔎 Fact-Checking
 
 OnC includes a fact-checking workflow designed to verify information before publication.
 
 A typical workflow is:
 
+```text
 Topic
   ↓
 Research
@@ -159,18 +152,19 @@ Cross-checking
 Validation
   ↓
 Content generation
+```
 
-Fact-checking improves reliability but does not guarantee that generated content is always correct.
+Fact-checking improves reliability but **does not guarantee that generated content is always correct**.
 
 Human verification may still be required.
 
-
 ---
 
-🎥 AI Video Pipeline
+# 🎥 AI Video Pipeline
 
 OnC includes a modular video-generation pipeline.
 
+```text
 RSS / Research
       ↓
 Script Generation
@@ -190,9 +184,11 @@ Video Assembly
 Quality Control
       ↓
 Publishing
+```
 
-Pipeline stages
+### Pipeline stages
 
+```bash
 # Step 1 — Generate the script
 python video_pipeline/01_script.py
 
@@ -219,179 +215,190 @@ python video_pipeline/08_qc.py
 
 # Step 9 — Publish
 python video_pipeline/publish_video.py
-
+```
 
 ---
 
-🚀 Getting Started
+# 🚀 Getting Started
 
-📥 Requirements
+## 📥 Requirements
 
 Recommended environment:
 
-Python 3.11+
-
-Git
-
-FFmpeg
-
-FFprobe
-
-ImageMagick
-
-Internet connection
-
-Accounts/API keys required by the enabled providers
-
-GitHub account if GitHub Actions automation is used
-
+- **Python 3.11+**
+- **Git**
+- **FFmpeg**
+- **FFprobe**
+- **ImageMagick**
+- Internet connection
+- Accounts/API keys required by the enabled providers
+- GitHub account if GitHub Actions automation is used
 
 Some workflows may require additional system dependencies.
 
-
 ---
 
-🛠️ Installation
+# 🛠️ Installation
 
-1. Clone the repository
+## 1. Clone the repository
 
+```bash
 git clone <YOUR_ONC_REPOSITORY_URL>
 cd Nyavodroid-OnC
+```
 
-Replace <YOUR_ONC_REPOSITORY_URL> with the repository URL provided with your licensed copy.
-
+Replace `<YOUR_ONC_REPOSITORY_URL>` with the repository URL provided with your licensed copy.
 
 ---
 
-2. Create a virtual environment
+## 2. Create a virtual environment
 
-Windows
+### Windows
 
+```bash
 python -m venv .venv
 .venv\Scripts\activate
+```
 
-Linux / macOS
+### Linux / macOS
 
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
-
+```
 
 ---
 
-3. Install Python dependencies
+## 3. Install Python dependencies
 
+```bash
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-
+```
 
 ---
 
-4. Verify FFmpeg
+## 4. Verify FFmpeg
 
+```bash
 ffmpeg -version
+```
 
 Also verify FFprobe:
 
+```bash
 ffprobe -version
-
+```
 
 ---
 
-5. Verify ImageMagick
+## 5. Verify ImageMagick
 
+```bash
 magick -version
+```
 
 If your installation uses the legacy command:
 
+```bash
 convert -version
-
+```
 
 ---
 
-🔐 Configuration
+# 🔐 Configuration
 
 OnC uses environment variables for API credentials and configuration.
 
-Create your local .env file from .env.example if provided:
+Create your local `.env` file from `.env.example` if provided:
 
+```bash
 cp .env.example .env
+```
 
-On Windows, copy the file manually if cp is unavailable.
+On Windows, copy the file manually if `cp` is unavailable.
 
-Never commit your real .env file to Git.
-
+**Never commit your real `.env` file to Git.**
 
 ---
 
-🔑 Environment Variables
+# 🔑 Environment Variables
 
 The exact variables depend on the features and providers enabled in your installation.
 
 Typical variables may include:
 
-Social Media
+## Social Media
 
+```env
 FB_PAGE_ID=your_page_id
 FB_PAGE_ACCESS_TOKEN=your_page_access_token
+```
 
-Text AI Providers
+## Text AI Providers
 
+```env
 GEMINI_API_KEY_CONTENT=your_key
 MISTRAL_API_KEY=your_key
 TOGETHER_API_KEY=your_key
 HF_TOKEN=your_token
+```
 
-Image Providers
+## Image Providers
 
+```env
 CLOUDFLARE_ACCOUNT_ID=your_account_id
 CLOUDFLARE_API_TOKEN=your_api_token
 FAL_API_KEY=your_token
 REPLICATE_API_TOKEN=your_token
+```
 
-Search & Verification
+## Search & Verification
 
+```env
 TAVILY_API_KEY=your_key
 PEXELS_API_KEY=your_key
+```
 
 > Only configure the providers you actually intend to use.
 
-
-
-
 ---
 
-💻 Usage
+# 💻 Usage
 
-Manual Content Generation
+## Manual Content Generation
 
 Depending on the configured workflow:
 
+```bash
 python post_content.py
+```
 
 The workflow can generate content using the configured AI providers and publishing configuration.
 
-
 ---
 
-🧪 Dry Run
+# 🧪 Dry Run
 
 When supported by the workflow, use dry-run mode before enabling real publishing.
 
 Example:
 
+```env
 VIS_DRY_RUN=1
+```
 
 A dry run allows the user to test the workflow without performing the final publishing operation.
 
-
 ---
 
-⚙️ GitHub Actions
+# ⚙️ GitHub Actions
 
 OnC can use GitHub Actions to automate recurring workflows.
 
 Typical workflow:
 
+```text
 GitHub Actions
       ↓
 Scheduled Trigger
@@ -407,34 +414,25 @@ Media Generation
 Quality Control
       ↓
 Publishing
+```
 
 Before enabling automated publishing:
 
 1. Configure GitHub repository secrets.
-
-
 2. Configure the required API credentials.
-
-
 3. Test the workflow manually.
-
-
 4. Verify the generated content.
-
-
 5. Enable the desired schedule.
-
-
-
 
 ---
 
-🔒 Security
+# 🔒 Security
 
 Never place secrets directly inside source code.
 
 Do not commit:
 
+```text
 .env
 API keys
 Access tokens
@@ -442,90 +440,64 @@ Passwords
 Private credentials
 Facebook tokens
 GitHub tokens
+```
 
 Use:
 
-.env for local development.
-
-GitHub Secrets for GitHub Actions.
-
-Secret-management solutions for production deployments.
-
+- `.env` for local development.
+- GitHub Secrets for GitHub Actions.
+- Secret-management solutions for production deployments.
 
 If a secret is accidentally committed to Git history, immediately revoke it and generate a replacement.
 
-
 ---
 
-📦 What the Buyer Receives
+# 📦 What the Buyer Receives
 
 A commercial purchase of OnC provides the buyer with a licensed copy of the software source code and the associated materials included in the purchased package.
 
 Depending on the purchased version, this may include:
 
-OnC source code
+- OnC source code
+- Configuration templates
+- Documentation
+- Quick Start documentation
+- Content-generation modules
+- Fact-checking modules
+- AI provider integrations
+- Video-generation pipeline
+- Quality-control components
+- GitHub Actions workflows
+- Supporting scripts included in the purchased release
 
-Configuration templates
+The purchase **does not transfer ownership of the OnC intellectual property**.
 
-Documentation
-
-Quick Start documentation
-
-Content-generation modules
-
-Fact-checking modules
-
-AI provider integrations
-
-Video-generation pipeline
-
-Quality-control components
-
-GitHub Actions workflows
-
-Supporting scripts included in the purchased release
-
-
-The purchase does not transfer ownership of the OnC intellectual property.
-
-The buyer receives a license to use the software according to the terms of the LICENSE file.
-
+The buyer receives a license to use the software according to the terms of the `LICENSE` file.
 
 ---
 
-🔑 What the Buyer Must Provide
+# 🔑 What the Buyer Must Provide
 
 The buyer is responsible for providing their own external services and credentials.
 
 This may include:
 
-AI provider accounts
+- AI provider accounts
+- AI API keys
+- Social media accounts
+- Facebook Page credentials
+- GitHub account
+- Search API credentials
+- Image API credentials
+- Hosting or computing resources
+- Internet access
+- Third-party service subscriptions or fees
 
-AI API keys
-
-Social media accounts
-
-Facebook Page credentials
-
-GitHub account
-
-Search API credentials
-
-Image API credentials
-
-Hosting or computing resources
-
-Internet access
-
-Third-party service subscriptions or fees
-
-
-The seller does not provide personal API keys, personal access tokens or personal social-media accounts.
-
+The seller does **not** provide personal API keys, personal access tokens or personal social-media accounts.
 
 ---
 
-💰 Third-Party Services
+# 💰 Third-Party Services
 
 OnC can interact with external services.
 
@@ -533,75 +505,52 @@ These services are independent from OnC.
 
 Examples include:
 
-AI providers
-
-Search providers
-
-Image providers
-
-Facebook
-
-GitHub
-
-Pexels
-
-Tavily
-
-Cloudflare
-
-Hugging Face
-
-Other configured APIs
-
+- AI providers
+- Search providers
+- Image providers
+- Facebook
+- GitHub
+- Pexels
+- Tavily
+- Cloudflare
+- Hugging Face
+- Other configured APIs
 
 The user is responsible for:
 
-Creating their own accounts.
-
-Obtaining their own credentials.
-
-Paying applicable fees.
-
-Following provider terms of service.
-
-Respecting API quotas.
-
-Respecting applicable laws and platform policies.
-
+- Creating their own accounts.
+- Obtaining their own credentials.
+- Paying applicable fees.
+- Following provider terms of service.
+- Respecting API quotas.
+- Respecting applicable laws and platform policies.
 
 OnC does not grant ownership or licensing rights to third-party services.
 
-
 ---
 
-⚠️ AI Content Disclaimer
+# ⚠️ AI Content Disclaimer
 
 OnC may generate content using artificial intelligence.
 
 AI-generated content may contain:
 
-Errors
-
-Inaccuracies
-
-Outdated information
-
-Misleading information
-
-Copyright-sensitive material
-
-Unexpected or inappropriate content
-
+- Errors
+- Inaccuracies
+- Outdated information
+- Misleading information
+- Copyright-sensitive material
+- Unexpected or inappropriate content
 
 Users are responsible for reviewing generated content before publishing when appropriate.
 
 OnC should not be relied upon without appropriate human verification for critical decisions.
 
-
 ---
 
-📁 Project Structure
+# 📁 Project Structure
 
+```text
 Nyavodroid-OnC/
 │
 ├── .github/
@@ -632,16 +581,15 @@ Nyavodroid-OnC/
 ├── requirements.txt
 ├── requirements-dev.txt
 └── *.py
+```
 
 > The exact structure may vary between releases.
 
-
-
-
 ---
 
-🏗️ Architecture
+# 🏗️ Architecture
 
+```mermaid
 graph TD
 
     A[RSS / Online Sources]
@@ -671,41 +619,38 @@ graph TD
     K --> D
     K --> G
     K --> I
-
+```
 
 ---
 
-🧪 Testing
+# 🧪 Testing
 
 Development dependencies are provided separately.
 
 Install them with:
 
+```bash
 pip install -r requirements-dev.txt
+```
 
 Run the test suite:
 
+```bash
 pytest
+```
 
 Tests are intended to verify important components such as:
 
-Configuration loading
-
-Content generation
-
-Fact-checking
-
-Media processing
-
-Video pipeline components
-
-Utility functions
-
-
+- Configuration loading
+- Content generation
+- Fact-checking
+- Media processing
+- Video pipeline components
+- Utility functions
 
 ---
 
-🤝 Contributions
+# 🤝 Contributions
 
 OnC is distributed under a proprietary commercial license.
 
@@ -713,119 +658,85 @@ Unless explicitly authorized by the copyright holder, users may not redistribute
 
 For authorized development or collaboration, contact the copyright holder.
 
-
 ---
 
-📜 License
+# 📜 License
 
-Commercial Proprietary License
+## Commercial Proprietary License
 
-OnC is proprietary software.
+OnC is **proprietary software**.
 
 Commercial use is permitted for licensed users.
 
 A licensed user may:
 
-Use OnC commercially.
+- Use OnC commercially.
+- Run OnC on their own infrastructure.
+- Modify OnC for their own use.
+- Generate and publish content using OnC.
+- Use OnC as part of their own business operations.
 
-Run OnC on their own infrastructure.
+A licensed user may **NOT**:
 
-Modify OnC for their own use.
-
-Generate and publish content using OnC.
-
-Use OnC as part of their own business operations.
-
-
-A licensed user may NOT:
-
-Resell OnC.
-
-Resell the source code.
-
-Redistribute the source code.
-
-Publish the source code publicly.
-
-Upload the source code to a public repository.
-
-Share the source code with third parties.
-
-Sublicense OnC.
-
-Sell modified versions of OnC.
-
-Distribute modified versions of OnC.
-
-Remove copyright or license notices.
-
+- Resell OnC.
+- Resell the source code.
+- Redistribute the source code.
+- Publish the source code publicly.
+- Upload the source code to a public repository.
+- Share the source code with third parties.
+- Sublicense OnC.
+- Sell modified versions of OnC.
+- Distribute modified versions of OnC.
+- Remove copyright or license notices.
 
 The software remains the intellectual property of the copyright holder.
 
-See LICENSE for the complete terms.
-
+See [`LICENSE`](LICENSE) for the complete terms.
 
 ---
 
-🙏 Acknowledgments
+# 🙏 Acknowledgments
 
 OnC may use or interact with technologies and services including:
 
-Python
-
-Pillow
-
-PyYAML
-
-Edge TTS
-
-FFmpeg
-
-ImageMagick
-
-Mistral
-
-Gemini
-
-Together
-
-Hugging Face
-
-Cloudflare
-
-Fal.ai
-
-Replicate
-
-Pexels
-
-Tavily
-
-GitHub Actions
-
+- Python
+- Pillow
+- PyYAML
+- Edge TTS
+- FFmpeg
+- ImageMagick
+- Mistral
+- Gemini
+- Together
+- Hugging Face
+- Cloudflare
+- Fal.ai
+- Replicate
+- Pexels
+- Tavily
+- GitHub Actions
 
 All third-party technologies remain the property of their respective owners and are subject to their respective licenses and terms.
 
-
 ---
 
-📞 Contact
+# 📞 Contact
 
-Author: Nyavo Rakotomavo
+**Author:** Nyavo Rakotomavo
 
-Email: nyavosapp@gmail.com
+**Email:** nyavosapp@gmail.com
 
-GitHub:
+**GitHub:**  
 https://github.com/nyavorakotomavo
 
-
 ---
 
-<p align="center">OnC — One Click Content
+<p align="center">
+
+**OnC — One Click Content**
 
 Automate. Generate. Verify. Publish.
 
 © 2026 Nyavo Rakotomavo — All Rights Reserved.
 
 </p>
-```
